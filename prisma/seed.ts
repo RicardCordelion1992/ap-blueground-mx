@@ -70,6 +70,21 @@ async function main() {
     });
   }
 
+  // Asegura que el admin original de la plataforma nunca se quede sin acceso,
+  // incluso si ya existen otros usuarios en la tabla (evita el candado que
+  // dejó fuera a ricardo.carrasco@theblueground.com tras quitar el
+  // auto-registro para cualquier correo @theblueground.com).
+  await prisma.user.upsert({
+    where: { email: 'ricardo.carrasco@theblueground.com' },
+    update: { role: 'ADMIN', active: true },
+    create: {
+      email: 'ricardo.carrasco@theblueground.com',
+      name: 'Ricardo Carrasco',
+      role: 'ADMIN',
+      active: true,
+    },
+  });
+
   console.log(`Seed listo: ${BUILDINGS.length} edificios, ${CATEGORIES.length} categorías, ${DOCUMENT_TYPE_SEED.length} tipos de documento.`);
 }
 

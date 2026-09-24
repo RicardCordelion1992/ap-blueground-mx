@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/currentUser';
 import { logAudit } from '@/lib/audit';
 
-const ROLES = ['ADMIN', 'FINANCE', 'VIEWER'];
+const ROLES = ['ADMIN', 'FINANCE', 'VIEWER'] as const;
+type Role = (typeof ROLES)[number];
 
 // Update a user's role and/or active flag. ADMIN-only, and an admin can't
 // change their own access here — that's a deliberate guard against locking
@@ -18,8 +19,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const body = await req.json();
-  const data: { role?: string; active?: boolean } = {};
-  if (ROLES.includes(body.role)) data.role = body.role;
+  const data: { role?: Role; active?: boolean } = {};
+  if (ROLES.includes(body.role)) data.role = body.role as Role;
   if (typeof body.active === 'boolean') data.active = body.active;
 
   if (Object.keys(data).length === 0) {

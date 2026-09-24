@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { usePathname } from 'next/navigation';
+import SignOutButton from './SignOutButton';
 
 const LINKS = [
   { href: '/', label: 'Panel' },
@@ -12,16 +12,9 @@ const LINKS = [
   { href: '/reports', label: 'Reportes' },
 ];
 
-export default function Nav({ email }: { email: string }) {
+export default function Nav({ email, role }: { email: string; role: string }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
-
-  async function signOut() {
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
-  }
+  const links = role === 'ADMIN' ? [...LINKS, { href: '/usuarios', label: 'Usuarios' }] : LINKS;
 
   return (
     <header className="border-b border-gray-200 bg-white">
@@ -29,7 +22,7 @@ export default function Nav({ email }: { email: string }) {
         <div className="flex items-center gap-6">
           <span className="font-semibold text-brand-700">Cuentas por Pagar</span>
           <nav className="flex gap-1">
-            {LINKS.map((l) => (
+            {links.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
@@ -44,9 +37,7 @@ export default function Nav({ email }: { email: string }) {
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <span>{email}</span>
-          <button onClick={signOut} className="btn-secondary text-xs">
-            Salir
-          </button>
+          <SignOutButton />
         </div>
       </div>
     </header>

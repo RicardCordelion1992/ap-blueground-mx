@@ -3,37 +3,32 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/currentUser';
 import { logAudit } from '@/lib/audit';
 
-const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || 'theblueground.com';
-const ROLES = ['ADMIN', 'FINANCE', 'VIEWER'];
+const ROLES = ['ADMIN', 'FINANCE', 'VIEWER'] as const;
+type Role = (typeof ROLES)[number];
 
-// Only an ADMIN can pre-provision a new user (this is the "yo controlo quién
-// entra" flow — no self-registration once at least one user exists, see
-// lib/currentUser.ts).
-export async function POST(req: NextRequest) {
+// Update a user's role and/or active flag. ADMIN-only, and an admin can't
+// change their own access here — that's a deliberate guard against locking
+// yourself out; have another admin do it, or edit it directly in Supabase.
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
   }
+  if (params.id === me.id) {
+    return NextResponse.json({ error: 'No puedes cambiar tu propio acceso desde aquí.' }, { status: 400 });
+  }
 
   const body = await req.json();
-  const email = (body.email || '').trim().toLowerCase();
-  const name = (body.name || '').trim();
-  const role = ROLES.includes(body.role) ? body.role : 'FINANCE';
+  const data: { role?: Role; active?: boolean } = {};
+  if (ROLES.includes(body.role)) data.role = body.role as Role;
+  if (typeof body.active === 'boolean') data.active = body.active;
 
-  if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
-    return NextResponse.json({ error: `El correo debe ser @${ALLOWED_DOMAIN}` }, { status: 400 });
-  }
-  if (!name) {
-    return NextResponse.json({ error: 'El nombre es requerido' }, { status: 400 });
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: 'Nada que actualizar' }, { status: 400 });
   }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: 'Ya existe un usuario con ese correo' }, { status: 409 });
-  }
+  const user = await prisma.user.update({ where: { id: params.id }, data });
+  await logAudit(me.id, 'update', 'User', user.id, `role=${user.role} active=${user.active}`);
 
-  const user = await prisma.user.create({ data: { email, name, role } });
-  await logAudit(me.id, 'create', 'User', user.id, `${user.email} (${user.role})`);
-
-  return NextResponse.json(user, { status: 201 });
+  return NextResponse.json(user);
 }

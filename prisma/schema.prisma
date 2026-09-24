@@ -29,6 +29,7 @@ model User {
   email     String   @unique // must be @theblueground.com — enforced at auth layer
   name      String
   role      UserRole @default(FINANCE)
+  active    Boolean  @default(true) // false = access revoked; row is kept for audit/history
   createdAt DateTime @default(now())
 
   invoicesCreated Invoice[] @relation("InvoiceCreatedBy")

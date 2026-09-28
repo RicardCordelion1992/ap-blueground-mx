@@ -32,17 +32,22 @@ function LoginForm() {
 
   return (
     <div className="card w-full max-w-sm p-8">
+      <div className="flex justify-center mb-6">
+        <div className="bg-brand-700 rounded-2xl px-4 py-3">
+          <img src="/brand/blueground-logo-white.png" alt="Blueground" className="h-5 w-auto" />
+        </div>
+      </div>
       <h1 className="text-lg font-semibold text-center mb-1">Cuentas por Pagar</h1>
       <p className="text-sm text-gray-500 text-center mb-6">Blueground México</p>
 
       {domainError && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2 mb-4">
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-2 mb-4">
           Solo se permite el acceso con correo @theblueground.com.
         </p>
       )}
 
       {sent ? (
-        <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md p-3">
+        <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3">
           Te enviamos un enlace de acceso a <strong>{email}</strong>. Ábrelo desde este mismo navegador.
         </p>
       ) : (
@@ -70,7 +75,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 p-4">
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>

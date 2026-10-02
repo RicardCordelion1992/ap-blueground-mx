@@ -28,11 +28,13 @@ export default function UsersClient({
   currentUserId: string;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role });
+  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role, password: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [resetId, setResetId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -49,11 +51,11 @@ export default function UsersClient({
       setCreateError(typeof body.error === 'string' ? body.error : 'No se pudo crear el usuario.');
       return;
     }
-    setForm({ email: '', name: '', role: 'FINANCE' });
+    setForm({ email: '', name: '', role: 'FINANCE', password: '' });
     router.refresh();
   }
 
-  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean }>) {
+  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; password: string }>) {
     setRowBusy(id);
     setRowError(null);
     const res = await fetch(`/api/users/${id}`, {
@@ -67,6 +69,10 @@ export default function UsersClient({
       setRowError({ id, message: typeof body.error === 'string' ? body.error : 'No se pudo actualizar.' });
       return;
     }
+    if ('password' in data) {
+      setResetId(null);
+      setResetPassword('');
+    }
     router.refresh();
   }
 
@@ -74,12 +80,12 @@ export default function UsersClient({
     <div className="space-y-6">
       <form onSubmit={createUser} className="card p-4 flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
-          <label className="label">Correo (@theblueground.com)</label>
+          <label className="label">Correo</label>
           <input
             type="email"
             required
             className="input"
-            placeholder="nombre@theblueground.com"
+            placeholder="nombre@correo.com"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
           />
@@ -91,6 +97,18 @@ export default function UsersClient({
             className="input"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="label">Contraseña</label>
+          <input
+            type="password"
+            required
+            minLength={8}
+            className="input"
+            placeholder="Mínimo 8 caracteres"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
           />
         </div>
         <div className="min-w-[160px]">
@@ -122,12 +140,14 @@ export default function UsersClient({
               <th className="px-4 py-2 font-medium">Rol</th>
               <th className="px-4 py-2 font-medium">Acceso</th>
               <th className="px-4 py-2 font-medium">Desde</th>
+              <th className="px-4 py-2 font-medium">Contraseña</th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => {
               const isMe = u.id === currentUserId;
               const busy = rowBusy === u.id;
+              const resetting = resetId === u.id;
               return (
                 <tr key={u.id} className="border-b border-gray-50 last:border-0 align-top">
                   <td className="px-4 py-2">
@@ -165,6 +185,48 @@ export default function UsersClient({
                   <td className="px-4 py-2 text-gray-500">
                     {new Date(u.createdAt).toLocaleDateString('es-MX')}
                   </td>
+                  <td className="px-4 py-2">
+                    {resetting ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="password"
+                          autoFocus
+                          placeholder="Nueva (mín. 8)"
+                          minLength={8}
+                          className="input py-1 w-32"
+                          value={resetPassword}
+                          onChange={(e) => setResetPassword(e.target.value)}
+                        />
+                        <button
+                          disabled={busy || resetPassword.length < 8}
+                          onClick={() => updateUser(u.id, { password: resetPassword })}
+                          className="btn-secondary py-1 px-2 text-xs"
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setResetId(null);
+                            setResetPassword('');
+                          }}
+                          className="text-xs text-gray-400 px-1"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          setResetId(u.id);
+                          setResetPassword('');
+                        }}
+                        className="text-xs text-brand-600 hover:underline"
+                      >
+                        Restablecer
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -172,8 +234,9 @@ export default function UsersClient({
         </table>
       </div>
       <p className="text-xs text-gray-500">
-        Solo las personas dadas de alta aquí pueden entrar (con su correo @theblueground.com). Al desactivar a
-        alguien, se le cierra el acceso de inmediato pero su historial (facturas, documentos) se conserva.
+        Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso es
+        que tú las hayas dado de alta, no el dominio del correo. Al desactivar a alguien, se le cierra el acceso
+        de inmediato pero su historial (facturas, documentos) se conserva.
       </p>
     </div>
   );

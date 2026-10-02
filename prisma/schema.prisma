@@ -1,6 +1,7 @@
 // Cuentas por Pagar — Blueground México
 // Prisma schema (Postgres). This is the data model for the real web app (Camino B):
-// Next.js + Postgres + Supabase Storage (files) + Supabase Auth (@theblueground.com only).
+// Next.js + Postgres + Supabase Storage (files) + Supabase Auth (email + password,
+// any domain — access is controlled by who an ADMIN creates in /usuarios, not by domain).
 //
 // Carries forward everything specified in the Claude Artifact prototype plus the new asks:
 // persona física/moral + AML document checklist, building→unit (depa) hierarchy with PO codes,
@@ -25,16 +26,17 @@ enum UserRole {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique // must be @theblueground.com — enforced at auth layer
-  name      String
-  role      UserRole @default(FINANCE)
-  active    Boolean  @default(true) // false = access revoked; row is kept for audit/history
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  email      String    @unique // login identity — any domain is accepted; access is controlled by who an ADMIN creates here (see /usuarios), not by email domain
+  name       String
+  role       UserRole  @default(FINANCE)
+  active     Boolean   @default(true) // false = access revoked; row is kept for audit/history
+  authUserId String?   @unique // Supabase Auth user id (set when the login identity is created or first matched) — used to reset this person's password via the admin API
+  createdAt  DateTime  @default(now())
 
-  invoicesCreated Invoice[] @relation("InvoiceCreatedBy")
+  invoicesCreated   Invoice[]        @relation("InvoiceCreatedBy")
   documentsUploaded VendorDocument[]
-  auditLogs       AuditLog[]
+  auditLogs         AuditLog[]
 }
 
 // ---------- Vendors / Landlords ----------
@@ -62,8 +64,8 @@ model Vendor {
   taxRegime     String? // régimen fiscal
   cfdiUse       String? // uso de CFDI
 
-  email         String?
-  phone         String?
+  email String?
+  phone String?
 
   // Banking
   bankName      String?
@@ -75,16 +77,16 @@ model Vendor {
   defaultCategoryId String?
   defaultCategory   ExpenseCategory? @relation(fields: [defaultCategoryId], references: [id])
 
-  status        String  @default("active") // active | inactive
+  status String @default("active") // active | inactive
   // Computed at read time from documents+fields, but cached here for fast filtering/reporting.
-  readiness     VendorReadiness @default(INCOMPLETE)
+  readiness VendorReadiness @default(INCOMPLETE)
 
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  documents     VendorDocument[]
-  invoices      Invoice[]
+  documents      VendorDocument[]
+  invoices       Invoice[]
   ownedBuildings Building[] // buildings where this vendor is the landlord/owner
 
   @@index([readiness])
@@ -94,24 +96,24 @@ model Vendor {
 // requiredForPersonType lets a document apply only to física or only to moral (or both, via
 // the DocumentTypeConfig below) — kept simple here as a free document type list seeded by type.
 model VendorDocument {
-  id           String    @id @default(cuid())
-  vendorId     String
-  vendor       Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
-  docType      DocumentType @relation(fields: [docTypeId], references: [id])
-  docTypeId    String
+  docType   DocumentType @relation(fields: [docTypeId], references: [id])
+  docTypeId String
 
-  status       DocStatus @default(PENDING)
-  fileUrl      String? // Supabase Storage object path — the actual PDF/image lives here
-  fileName     String?
-  issuedDate   DateTime?
-  expiresDate  DateTime? // null = does not expire (e.g. acta constitutiva)
+  status      DocStatus @default(PENDING)
+  fileUrl     String? // Supabase Storage object path — the actual PDF/image lives here
+  fileName    String?
+  issuedDate  DateTime?
+  expiresDate DateTime? // null = does not expire (e.g. acta constitutiva)
 
   uploadedById String?
   uploadedBy   User?     @relation(fields: [uploadedById], references: [id])
   uploadedAt   DateTime?
 
-  notes        String?
+  notes String?
 
   @@unique([vendorId, docTypeId])
 }
@@ -128,35 +130,35 @@ enum DocStatus {
 // Initial seed reflects common practice for real-estate/leasing operations under LFPIORPI —
 // legal/compliance should confirm the final required list before it gates payments.
 model DocumentType {
-  id                String     @id @default(cuid())
-  name              String     @unique // e.g. "Constancia de Situación Fiscal"
-  appliesTo         PersonType? // null = required for both física and moral
-  required          Boolean    @default(true)
-  expires           Boolean    @default(false) // does this doc type have a validity date?
-  sortOrder         Int        @default(0)
+  id         String      @id @default(cuid())
+  name       String      @unique // e.g. "Constancia de Situación Fiscal"
+  appliesTo  PersonType? // null = required for both física and moral
+  required   Boolean     @default(true)
+  expires    Boolean     @default(false) // does this doc type have a validity date?
+  sortOrder  Int         @default(0)
 
-  vendorDocuments    VendorDocument[]
+  vendorDocuments VendorDocument[]
 }
 
 // ---------- Properties: Building (cost center) → Unit (depa / PO) ----------
 
 model Building {
-  id        String   @id @default(cuid())
-  name      String   @unique // e.g. "Edgar Allan Poe 362"
-  city      String   @default("CDMX")
-  pmsCode   String? // Buildings module code in the internal PMS, if known
+  id      String  @id @default(cuid())
+  name    String  @unique // e.g. "Edgar Allan Poe 362"
+  city    String  @default("CDMX")
+  pmsCode String? // Buildings module code in the internal PMS, if known
 
   landlordId String?
-  landlord   Vendor?  @relation(fields: [landlordId], references: [id])
+  landlord   Vendor? @relation(fields: [landlordId], references: [id])
 
-  units     Unit[]
+  units              Unit[]
   invoiceAllocations InvoiceAllocation[] // allocations at the building level (no specific unit)
 
   createdAt DateTime @default(now())
 }
 
 model Unit {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   buildingId String
   building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
@@ -171,12 +173,12 @@ model Unit {
 // ---------- Expense categories ----------
 
 model ExpenseCategory {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  sortOrder Int      @default(0)
+  id        String @id @default(cuid())
+  name      String @unique
+  sortOrder Int    @default(0)
 
-  vendors   Vendor[]
-  invoices  Invoice[]
+  vendors  Vendor[]
+  invoices Invoice[]
 }
 
 // ---------- Invoices ----------
@@ -187,47 +189,47 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  vendorId       String
-  vendor         Vendor        @relation(fields: [vendorId], references: [id])
+  id       String @id @default(cuid())
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
 
-  invoiceNumber  String?
-  issueDate      DateTime?
-  receivedDate   DateTime
-  dueDate        DateTime?
+  invoiceNumber String?
+  issueDate     DateTime?
+  receivedDate  DateTime
+  dueDate       DateTime?
 
-  currency       String        @default("MXN")
-  subtotal       Decimal?      @db.Decimal(14, 2)
-  taxRate        Decimal?      @db.Decimal(5, 2)
-  taxAmount      Decimal?      @db.Decimal(14, 2)
-  total          Decimal       @db.Decimal(14, 2)
+  currency  String   @default("MXN")
+  subtotal  Decimal? @db.Decimal(14, 2)
+  taxRate   Decimal? @db.Decimal(5, 2)
+  taxAmount Decimal? @db.Decimal(14, 2)
+  total     Decimal  @db.Decimal(14, 2)
 
-  categoryId     String?
-  category       ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+  category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
 
-  billingStart   DateTime?
-  billingEnd     DateTime?
+  billingStart DateTime?
+  billingEnd   DateTime?
 
-  status         InvoiceStatus @default(PENDING)
-  paidDate       DateTime?
-  paidVia        String?
+  status   InvoiceStatus @default(PENDING)
+  paidDate DateTime?
+  paidVia  String?
   // Payment-readiness gate: even an approved invoice cannot move to PAID (or appear on a
   // bank export batch) while the vendor's readiness is INCOMPLETE. Enforced in the app layer
   // and mirrored here for reporting.
-  payable        Boolean       @default(false)
+  payable Boolean @default(false)
 
-  fileUrl        String? // the actual invoice PDF/image, in Supabase Storage
-  fileName       String?
-  sourceSystem   String        @default("manual") // manual | ai_extraction | email_forward
+  fileUrl      String? // the actual invoice PDF/image, in Supabase Storage
+  fileName     String?
+  sourceSystem String  @default("manual") // manual | ai_extraction | email_forward
 
-  notes          String?
+  notes String?
 
-  createdById    String?
-  createdBy      User?         @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdById String?
+  createdBy   User?    @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  allocations    InvoiceAllocation[]
+  allocations InvoiceAllocation[]
 
   @@index([status])
   @@index([receivedDate])
@@ -237,17 +239,17 @@ model Invoice {
 // unitId is optional: an allocation can target a whole building (common-area utility) or one
 // specific unit/depa within it (e.g. a unit's own electricity meter).
 model InvoiceAllocation {
-  id         String   @id @default(cuid())
-  invoiceId  String
-  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   buildingId String
   building   Building @relation(fields: [buildingId], references: [id])
 
-  unitId     String?
-  unit       Unit?    @relation(fields: [unitId], references: [id])
+  unitId String?
+  unit   Unit?   @relation(fields: [unitId], references: [id])
 
-  amount     Decimal  @db.Decimal(14, 2)
+  amount Decimal @db.Decimal(14, 2)
 
   @@index([buildingId])
   @@index([unitId])
@@ -256,14 +258,14 @@ model InvoiceAllocation {
 // ---------- Audit trail (who changed what — important once this holds banking/AML data) ----------
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  action    String // e.g. "vendor.document.approved", "invoice.marked_paid"
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String // e.g. "vendor.document.approved", "invoice.marked_paid"
   entityType String
-  entityId  String
-  detail    String?
-  createdAt DateTime @default(now())
+  entityId   String
+  detail     String?
+  createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
 }

@@ -54,8 +54,9 @@ export async function POST(req: NextRequest) {
   }
 
   // ...then the app-level record that controls role/access.
+  // authUserId is cast via "as any" — see note in app/api/users/[id]/route.ts.
   const user = await prisma.user.create({
-    data: { email, name, role, authUserId: authData.user.id },
+    data: { email, name, role, authUserId: authData.user.id } as any,
   });
   await logAudit(me.id, 'create', 'User', user.id, `${user.email} (${user.role})`);
 

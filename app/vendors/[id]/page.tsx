@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { missingVendorFields } from '@/lib/readiness';
+import { getCurrentUser } from '@/lib/currentUser';
 import { notFound } from 'next/navigation';
 import VendorDetailClient from './VendorDetailClient';
 import { DOCS_BUCKET, signDocUrl } from '@/lib/signedUrl';
@@ -19,6 +20,7 @@ export default async function VendorDetailPage({ params }: { params: { id: strin
   });
 
   const buildings = await prisma.building.findMany({ orderBy: { name: 'asc' } });
+  const me = await getCurrentUser();
 
   const documentsWithSignedUrls = await Promise.all(
     vendor.documents.map(async (d) => ({
@@ -35,5 +37,5 @@ export default async function VendorDetailPage({ params }: { params: { id: strin
     documents: documentsWithSignedUrls,
   };
 
-  return <VendorDetailClient vendor={enriched as any} buildings={buildings} />;
+  return <VendorDetailClient vendor={enriched as any} buildings={buildings} isAdmin={me?.role === 'ADMIN'} />;
 }

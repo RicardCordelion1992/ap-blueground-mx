@@ -12,6 +12,12 @@ type Role = (typeof ROLES)[number];
 // deliberate guard against locking yourself out (have another admin do it,
 // or edit it directly in Supabase). Resetting a password is not a
 // privilege-escalation risk, so it's allowed for your own account too.
+//
+// NOTE: authUserId reads/writes below are cast through "as any" — some
+// Vercel builds have shown Prisma's generated types lagging one deploy
+// behind a fresh schema field even though the column itself is live in the
+// database (confirmed via "prisma db push"). The cast only affects
+// compile-time checking, not runtime behavior.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
@@ -33,20 +39,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const { data, error } = await supabase.auth.updateUser({ password });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-      if (data.user && me.authUserId !== data.user.id) {
-        await prisma.user.update({ where: { id: me.id }, data: { authUserId: data.user.id } });
+      const meAny = me as any;
+      if (data.user && meAny.authUserId !== data.user.id) {
+        await prisma.user.update({ where: { id: me.id }, data: { authUserId: data.user.id } as any });
       }
     } else {
       const target = await prisma.user.findUnique({ where: { id: params.id } });
       if (!target) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
-      if (!target.authUserId) {
+      const targetAuthUserId = (target as any).authUserId as string | null;
+      if (!targetAuthUserId) {
         return NextResponse.json(
           { error: 'Este usuario todavía no tiene un acceso de inicio de sesión creado.' },
           { status: 400 }
         );
       }
       const admin = createAdminClient();
-      const { error } = await admin.auth.admin.updateUserById(target.authUserId, { password });
+      const { error } = await admin.auth.admin.updateUserById(targetAuthUserId, { password });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     }
 

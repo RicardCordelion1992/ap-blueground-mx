@@ -1,13 +1,11 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || 'theblueground.com';
-
-// Refreshes the Supabase session on every request and enforces two rules:
-//  1. Every page except /login (and the auth callback) requires a session.
-//  2. The signed-in email must belong to the company domain — this is the
-//     server-side enforcement point since Supabase Auth itself doesn't
-//     restrict sign-ups by domain.
+// Refreshes the Supabase session on every request and enforces one rule:
+// every page except /login (and the auth callback) requires a session.
+// Who is allowed to have an account at all is controlled separately, by
+// which users an ADMIN has pre-provisioned from /usuarios (see
+// lib/currentUser.ts) — not by email domain.
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
 
@@ -39,14 +37,6 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    return NextResponse.redirect(url);
-  }
-
-  if (user && !user.email?.toLowerCase().endsWith(`@${ALLOWED_DOMAIN}`)) {
-    await supabase.auth.signOut();
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('error', 'dominio_no_permitido');
     return NextResponse.redirect(url);
   }
 

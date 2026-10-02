@@ -38,10 +38,20 @@ const STATUS_LABEL: Record<string, string> = {
   REJECTED: 'Rechazado',
 };
 
-export default function VendorDetailClient({ vendor: initial, buildings }: { vendor: Vendor; buildings: { id: string; name: string }[] }) {
+export default function VendorDetailClient({
+  vendor: initial,
+  buildings,
+  isAdmin,
+}: {
+  vendor: Vendor;
+  buildings: { id: string; name: string }[];
+  isAdmin?: boolean;
+}) {
   const router = useRouter();
   const [vendor, setVendor] = useState(initial);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function refresh() {
     const res = await fetch(`/api/vendors/${vendor.id}`);
@@ -80,6 +90,21 @@ export default function VendorDetailClient({ vendor: initial, buildings }: { ven
     await refresh();
   }
 
+  async function deleteVendor() {
+    if (!confirm(`¿Eliminar a "${vendor.name}"? Esto no se puede deshacer.`)) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const res = await fetch(`/api/vendors/${vendor.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const body = await res.json();
+      setDeleteError(typeof body.error === 'string' ? body.error : 'No se pudo eliminar.');
+      setDeleting(false);
+      return;
+    }
+    router.push('/vendors');
+    router.refresh();
+  }
+
   const docByType = new Map(vendor.documents.map((d) => [d.docTypeId, d]));
 
   return (
@@ -91,8 +116,17 @@ export default function VendorDetailClient({ vendor: initial, buildings }: { ven
             {vendor.rfc} · {vendor.personType === 'MORAL' ? 'Persona moral' : 'Persona física'}
           </p>
         </div>
-        {vendor.readiness === 'READY' ? <span className="badge-ready text-sm">Ready · Pagable</span> : <span className="badge-incomplete text-sm">Incompleto · No pagable</span>}
+        <div className="flex items-center gap-3">
+          {vendor.readiness === 'READY' ? <span className="badge-ready text-sm">Ready · Pagable</span> : <span className="badge-incomplete text-sm">Incompleto · No pagable</span>}
+          {isAdmin && (
+            <button onClick={deleteVendor} disabled={deleting} className="text-xs text-red-600 hover:underline">
+              {deleting ? 'Eliminando…' : 'Eliminar proveedor'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {deleteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">{deleteError}</p>}
 
       {vendor.readiness === 'INCOMPLETE' && (
         <div className="card p-4 border-amber-300 bg-amber-50 space-y-2">

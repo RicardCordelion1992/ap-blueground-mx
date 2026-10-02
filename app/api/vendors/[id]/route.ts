@@ -59,3 +59,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return NextResponse.json({ ...vendor, ...result });
 }
+
+// ADMIN-only. Blocked by the database if the vendor still has invoices on
+// file (Invoice.vendorId has no cascade) — that's intentional, it protects
+// payment history; the error is surfaced as a friendly message instead of
+// a 500.
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getCurrentUser();
+  if (!me || me.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
+
+  const vendor = await prisma.vendor.findUnique({ where: { id: params.id } });
+  if (!vendor) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+
+  try {
+    await prisma.vendor.delete({ where: { id: params.id } });
+  } catch {
+    return NextResponse.json(
+      { error: 'No se puede eliminar: este proveedor tiene facturas registradas en su historial.' },
+      { status: 409 }
+    );
+  }
+
+  await logAudit(me.id, 'delete', 'Vendor', params.id, vendor.name);
+  return NextResponse.json({ ok: true });
+}

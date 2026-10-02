@@ -22,6 +22,34 @@ const initial = {
   notes: '',
 };
 
+// Catálogo oficial del SAT de régimen fiscal (c_RegimenFiscal, CFDI 4.0).
+// appliesTo filtra las opciones según el tipo de persona del formulario;
+// null = aplica tanto a persona física como a persona moral.
+const REGIMEN_FISCAL_OPTIONS: { code: string; label: string; appliesTo: 'FISICA' | 'MORAL' | null }[] = [
+  { code: '601', label: 'General de Ley Personas Morales', appliesTo: 'MORAL' },
+  { code: '603', label: 'Personas Morales con Fines no Lucrativos', appliesTo: 'MORAL' },
+  { code: '605', label: 'Sueldos y Salarios e Ingresos Asimilados a Salarios', appliesTo: 'FISICA' },
+  { code: '606', label: 'Arrendamiento', appliesTo: 'FISICA' },
+  { code: '607', label: 'Régimen de Enajenación o Adquisición de Bienes', appliesTo: 'FISICA' },
+  { code: '608', label: 'Demás ingresos', appliesTo: 'FISICA' },
+  { code: '610', label: 'Residentes en el Extranjero sin Establecimiento Permanente en México', appliesTo: null },
+  { code: '611', label: 'Ingresos por Dividendos (socios y accionistas)', appliesTo: 'FISICA' },
+  { code: '612', label: 'Personas Físicas con Actividades Empresariales y Profesionales', appliesTo: 'FISICA' },
+  { code: '614', label: 'Ingresos por intereses', appliesTo: 'FISICA' },
+  { code: '615', label: 'Régimen de los ingresos por obtención de premios', appliesTo: 'FISICA' },
+  { code: '616', label: 'Sin obligaciones fiscales', appliesTo: 'FISICA' },
+  { code: '620', label: 'Sociedades Cooperativas de Producción que optan por diferir sus ingresos', appliesTo: 'MORAL' },
+  { code: '621', label: 'Incorporación Fiscal', appliesTo: 'FISICA' },
+  { code: '622', label: 'Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras', appliesTo: 'MORAL' },
+  { code: '623', label: 'Opcional para Grupos de Sociedades', appliesTo: 'MORAL' },
+  { code: '624', label: 'Coordinados', appliesTo: 'MORAL' },
+  { code: '625', label: 'Actividades Empresariales con ingresos a través de Plataformas Tecnológicas', appliesTo: 'FISICA' },
+  { code: '626', label: 'Régimen Simplificado de Confianza (RESICO)', appliesTo: null },
+  { code: '628', label: 'Hidrocarburos', appliesTo: 'MORAL' },
+  { code: '629', label: 'De los Regímenes Fiscales Preferentes y de las Empresas Multinacionales', appliesTo: null },
+  { code: '630', label: 'Enajenación de acciones en bolsa de valores', appliesTo: null },
+];
+
 export default function NewVendorPage() {
   const router = useRouter();
   const [form, setForm] = useState(initial);
@@ -107,7 +135,14 @@ export default function NewVendorPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Régimen fiscal</label>
-            <input className="input" value={form.taxRegime} onChange={(e) => set('taxRegime', e.target.value)} />
+            <select className="input" value={form.taxRegime} onChange={(e) => set('taxRegime', e.target.value)}>
+              <option value="">Selecciona…</option>
+              {REGIMEN_FISCAL_OPTIONS.filter((r) => r.appliesTo === null || r.appliesTo === form.personType).map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.code} – {r.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">Correo de contacto</label>

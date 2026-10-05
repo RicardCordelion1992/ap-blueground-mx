@@ -67,6 +67,9 @@ function LoginForm() {
           {loading ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
+      <p className="text-xs text-center mt-3">
+        <a href="/forgot-password" className="underline text-gray-500">¿Olvidaste tu contraseña?</a>
+      </p>
       <p className="text-xs text-gray-400 text-center mt-5">
         El acceso es solo por invitación. Si no tienes cuenta, pide a un administrador que te dé de alta.
       </p>

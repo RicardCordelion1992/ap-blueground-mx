@@ -20,6 +20,15 @@ const ROLE_LABEL: Record<Role, string> = {
   VIEWER: 'Solo lectura',
 };
 
+function generatePassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < 10; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
 export default function UsersClient({
   users,
   currentUserId,
@@ -28,19 +37,21 @@ export default function UsersClient({
   currentUserId: string;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role });
+  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role, password: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [rowNotice, setRowNotice] = useState<{ id: string; message: string } | null>(null);
+  const [resetRowId, setResetRowId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     setCreateError(null);
-    setCreatedEmail(null);
+    setCreated(null);
     const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,12 +63,12 @@ export default function UsersClient({
       setCreateError(typeof body.error === 'string' ? body.error : 'No se pudo crear el usuario.');
       return;
     }
-    setCreatedEmail(form.email);
-    setForm({ email: '', name: '', role: 'FINANCE' });
+    setCreated({ email: form.email, password: form.password });
+    setForm({ email: '', name: '', role: 'FINANCE', password: '' });
     router.refresh();
   }
 
-  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; resendInvite: boolean }>) {
+  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; password: string }>) {
     setRowBusy(id);
     setRowError(null);
     setRowNotice(null);
@@ -72,8 +83,10 @@ export default function UsersClient({
       setRowError({ id, message: typeof body.error === 'string' ? body.error : 'No se pudo actualizar.' });
       return;
     }
-    if (data.resendInvite) {
-      setRowNotice({ id, message: 'Correo enviado.' });
+    if (typeof data.password === 'string') {
+      setRowNotice({ id, message: 'Contraseña actualizada.' });
+      setResetRowId(null);
+      setResetPassword('');
     }
     router.refresh();
   }
@@ -115,13 +128,34 @@ export default function UsersClient({
             ))}
           </select>
         </div>
+        <div className="flex-1 min-w-[220px]">
+          <label className="label">Contraseña inicial</label>
+          <div className="flex gap-2">
+            <input
+              required
+              minLength={8}
+              className="input"
+              placeholder="Mínimo 8 caracteres"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            />
+            <button
+              type="button"
+              className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap"
+              onClick={() => setForm((f) => ({ ...f, password: generatePassword() }))}
+            >
+              Generar
+            </button>
+          </div>
+        </div>
         <button type="submit" disabled={creating} className="btn-primary">
           {creating ? 'Creando…' : '+ Dar de alta'}
         </button>
         {createError && <p className="text-sm text-red-600 w-full">{createError}</p>}
-        {createdEmail && !createError && (
+        {created && !createError && (
           <p className="text-sm text-green-700 w-full">
-            Se envió un correo de invitación a {createdEmail} para que cree su propia contraseña.
+            Usuario {created.email} creado con la contraseña <strong>{created.password}</strong>. Cópiala y
+            compártela con esa persona — no queda guardada en ningún otro lugar.
           </p>
         )}
       </form>
@@ -135,13 +169,14 @@ export default function UsersClient({
               <th className="px-4 py-2 font-medium">Rol</th>
               <th className="px-4 py-2 font-medium">Acceso</th>
               <th className="px-4 py-2 font-medium">Desde</th>
-              <th className="px-4 py-2 font-medium">Invitación</th>
+              <th className="px-4 py-2 font-medium">Contraseña</th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => {
               const isMe = u.id === currentUserId;
               const busy = rowBusy === u.id;
+              const resetting = resetRowId === u.id;
               return (
                 <tr key={u.id} className="border-b border-gray-50 last:border-0 align-top">
                   <td className="px-4 py-2">
@@ -182,13 +217,42 @@ export default function UsersClient({
                   <td className="px-4 py-2">
                     {isMe ? (
                       <span className="text-xs text-gray-400">—</span>
+                    ) : resetting ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          autoFocus
+                          className="input py-1 text-xs"
+                          placeholder="Nueva contraseña"
+                          value={resetPassword}
+                          onChange={(e) => setResetPassword(e.target.value)}
+                        />
+                        <button
+                          disabled={busy || resetPassword.trim().length < 8}
+                          onClick={() => updateUser(u.id, { password: resetPassword.trim() })}
+                          className="text-xs text-brand-600 hover:underline whitespace-nowrap"
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setResetRowId(null);
+                            setResetPassword('');
+                          }}
+                          className="text-xs text-gray-400 hover:underline"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     ) : (
                       <button
                         disabled={busy}
-                        onClick={() => updateUser(u.id, { resendInvite: true })}
+                        onClick={() => {
+                          setResetRowId(u.id);
+                          setResetPassword('');
+                        }}
                         className="text-xs text-brand-600 hover:underline"
                       >
-                        Reenviar invitación
+                        Restablecer
                       </button>
                     )}
                     {rowNotice?.id === u.id && <p className="text-xs text-green-700 mt-1">{rowNotice.message}</p>}
@@ -200,11 +264,11 @@ export default function UsersClient({
         </table>
       </div>
       <p className="text-xs text-gray-500">
-        Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso es
-        que tú las hayas dado de alta, no el dominio del correo. Cada persona crea su propia contraseña al
-        recibir el correo de invitación (o restableciéndola ella misma si la olvida); tú solo controlas quién
-        entra, su rol, y puedes desactivar su acceso de inmediato conservando su historial (facturas,
-        documentos).
+        Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso
+        es que tú las hayas dado de alta, no el dominio del correo. Tú defines su contraseña inicial al
+        crearlas y puedes restablecerla cuando quieras; cada persona también puede cambiarla desde su cuenta
+        o recuperarla ella misma si la olvida. Desactivar a alguien bloquea su entrada de inmediato
+        conservando su historial (facturas, documentos).
       </p>
     </div>
   );

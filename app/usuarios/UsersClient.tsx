@@ -28,18 +28,19 @@ export default function UsersClient({
   currentUserId: string;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role, password: '' });
+  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
-  const [resetId, setResetId] = useState<string | null>(null);
-  const [resetPassword, setResetPassword] = useState('');
+  const [rowNotice, setRowNotice] = useState<{ id: string; message: string } | null>(null);
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     setCreateError(null);
+    setCreatedEmail(null);
     const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,13 +52,15 @@ export default function UsersClient({
       setCreateError(typeof body.error === 'string' ? body.error : 'No se pudo crear el usuario.');
       return;
     }
-    setForm({ email: '', name: '', role: 'FINANCE', password: '' });
+    setCreatedEmail(form.email);
+    setForm({ email: '', name: '', role: 'FINANCE' });
     router.refresh();
   }
 
-  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; password: string }>) {
+  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; resendInvite: boolean }>) {
     setRowBusy(id);
     setRowError(null);
+    setRowNotice(null);
     const res = await fetch(`/api/users/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -69,9 +72,8 @@ export default function UsersClient({
       setRowError({ id, message: typeof body.error === 'string' ? body.error : 'No se pudo actualizar.' });
       return;
     }
-    if ('password' in data) {
-      setResetId(null);
-      setResetPassword('');
+    if (data.resendInvite) {
+      setRowNotice({ id, message: 'Correo enviado.' });
     }
     router.refresh();
   }
@@ -100,18 +102,6 @@ export default function UsersClient({
           />
         </div>
         <div className="min-w-[160px]">
-          <label className="label">Contraseña</label>
-          <input
-            type="password"
-            required
-            minLength={8}
-            className="input"
-            placeholder="Mínimo 8 caracteres"
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-          />
-        </div>
-        <div className="min-w-[160px]">
           <label className="label">Rol</label>
           <select
             className="input"
@@ -129,6 +119,11 @@ export default function UsersClient({
           {creating ? 'Creando…' : '+ Dar de alta'}
         </button>
         {createError && <p className="text-sm text-red-600 w-full">{createError}</p>}
+        {createdEmail && !createError && (
+          <p className="text-sm text-green-700 w-full">
+            Se envió un correo de invitación a {createdEmail} para que cree su propia contraseña.
+          </p>
+        )}
       </form>
 
       <div className="card overflow-hidden">
@@ -140,14 +135,13 @@ export default function UsersClient({
               <th className="px-4 py-2 font-medium">Rol</th>
               <th className="px-4 py-2 font-medium">Acceso</th>
               <th className="px-4 py-2 font-medium">Desde</th>
-              <th className="px-4 py-2 font-medium">Contraseña</th>
+              <th className="px-4 py-2 font-medium">Invitación</th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => {
               const isMe = u.id === currentUserId;
               const busy = rowBusy === u.id;
-              const resetting = resetId === u.id;
               return (
                 <tr key={u.id} className="border-b border-gray-50 last:border-0 align-top">
                   <td className="px-4 py-2">
@@ -186,46 +180,18 @@ export default function UsersClient({
                     {new Date(u.createdAt).toLocaleDateString('es-MX')}
                   </td>
                   <td className="px-4 py-2">
-                    {resetting ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="password"
-                          autoFocus
-                          placeholder="Nueva (mín. 8)"
-                          minLength={8}
-                          className="input py-1 w-32"
-                          value={resetPassword}
-                          onChange={(e) => setResetPassword(e.target.value)}
-                        />
-                        <button
-                          disabled={busy || resetPassword.length < 8}
-                          onClick={() => updateUser(u.id, { password: resetPassword })}
-                          className="btn-secondary py-1 px-2 text-xs"
-                        >
-                          Guardar
-                        </button>
-                        <button
-                          onClick={() => {
-                            setResetId(null);
-                            setResetPassword('');
-                          }}
-                          className="text-xs text-gray-400 px-1"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
+                    {isMe ? (
+                      <span className="text-xs text-gray-400">—</span>
                     ) : (
                       <button
                         disabled={busy}
-                        onClick={() => {
-                          setResetId(u.id);
-                          setResetPassword('');
-                        }}
+                        onClick={() => updateUser(u.id, { resendInvite: true })}
                         className="text-xs text-brand-600 hover:underline"
                       >
-                        Restablecer
+                        Reenviar invitación
                       </button>
                     )}
+                    {rowNotice?.id === u.id && <p className="text-xs text-green-700 mt-1">{rowNotice.message}</p>}
                   </td>
                 </tr>
               );
@@ -235,8 +201,10 @@ export default function UsersClient({
       </div>
       <p className="text-xs text-gray-500">
         Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso es
-        que tú las hayas dado de alta, no el dominio del correo. Al desactivar a alguien, se le cierra el acceso
-        de inmediato pero su historial (facturas, documentos) se conserva.
+        que tú las hayas dado de alta, no el dominio del correo. Cada persona crea su propia contraseña al
+        recibir el correo de invitación (o restableciéndola ella misma si la olvida); tú solo controlas quién
+        entra, su rol, y puedes desactivar su acceso de inmediato conservando su historial (facturas,
+        documentos).
       </p>
     </div>
   );

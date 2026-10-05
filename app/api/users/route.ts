@@ -11,6 +11,12 @@ type Role = (typeof ROLES)[number];
 // entra" flow — no self-registration once at least one user exists, see
 // lib/currentUser.ts). Any email domain is accepted: access is controlled
 // entirely by who gets created here, not by the domain of their email.
+//
+// The admin does NOT set a password here — Supabase emails the new person
+// an invite link (same /auth/callback -> /reset-password screen used by
+// /forgot-password) that lets THEM create their own password. The admin's
+// power stays limited to who gets an account, their role, and turning
+// access on/off — never seeing or setting anyone else's password.
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
@@ -20,7 +26,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const email = (body.email || '').trim().toLowerCase();
   const name = (body.name || '').trim();
-  const password = (body.password || '').trim();
   const role: Role = ROLES.includes(body.role) ? body.role : 'FINANCE';
 
   if (!email) {
@@ -29,26 +34,23 @@ export async function POST(req: NextRequest) {
   if (!name) {
     return NextResponse.json({ error: 'El nombre es requerido' }, { status: 400 });
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
-  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     return NextResponse.json({ error: 'Ya existe un usuario con ese correo' }, { status: 409 });
   }
 
-  // Create the real login identity in Supabase Auth first...
+  // Create the login identity in Supabase Auth and email them an invite to
+  // set their own password...
   const admin = createAdminClient();
-  const { data: authData, error: authError } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
+  const redirectTo = new URL('/auth/callback?next=/reset-password', req.url).toString();
+  const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
+    redirectTo,
   });
 
   if (authError || !authData?.user) {
     return NextResponse.json(
-      { error: authError?.message || 'No se pudo crear el acceso de inicio de sesión.' },
+      { error: authError?.message || 'No se pudo enviar la invitación.' },
       { status: 400 }
     );
   }

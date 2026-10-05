@@ -12,11 +12,11 @@ type Role = (typeof ROLES)[number];
 // lib/currentUser.ts). Any email domain is accepted: access is controlled
 // entirely by who gets created here, not by the domain of their email.
 //
-// The admin does NOT set a password here — Supabase emails the new person
-// an invite link (same /auth/callback -> /reset-password screen used by
-// /forgot-password) that lets THEM create their own password. The admin's
-// power stays limited to who gets an account, their role, and turning
-// access on/off — never seeing or setting anyone else's password.
+// The admin sets the initial password directly here (no invite email, no
+// dependency on an outgoing-mail provider). The admin shares that password
+// with the new person out of band (in person, chat, etc.); the person can
+// change it any time from their own account, or via /forgot-password if
+// they forget it and no admin is around.
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   const email = (body.email || '').trim().toLowerCase();
   const name = (body.name || '').trim();
   const role: Role = ROLES.includes(body.role) ? body.role : 'FINANCE';
+  const password = (body.password || '').trim();
 
   if (!email) {
     return NextResponse.json({ error: 'El correo es requerido' }, { status: 400 });
@@ -34,23 +35,27 @@ export async function POST(req: NextRequest) {
   if (!name) {
     return NextResponse.json({ error: 'El nombre es requerido' }, { status: 400 });
   }
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     return NextResponse.json({ error: 'Ya existe un usuario con ese correo' }, { status: 409 });
   }
 
-  // Create the login identity in Supabase Auth and email them an invite to
-  // set their own password...
+  // Create the login identity in Supabase Auth with the password the admin
+  // just set, already confirmed — no email round-trip needed.
   const admin = createAdminClient();
-  const redirectTo = new URL('/auth/callback?next=/reset-password', req.url).toString();
-  const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
   });
 
   if (authError || !authData?.user) {
     return NextResponse.json(
-      { error: authError?.message || 'No se pudo enviar la invitación.' },
+      { error: authError?.message || 'No se pudo crear la cuenta.' },
       { status: 400 }
     );
   }

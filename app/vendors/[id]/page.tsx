@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function VendorDetailPage({ params }: { params: { id: string } }) {
   const vendor = await prisma.vendor.findUnique({
     where: { id: params.id },
-    include: { documents: true, ownedBuildings: true },
+    include: { documents: true, ownedBuildings: true, defaultCategory: true },
   });
   if (!vendor) notFound();
 
@@ -20,6 +20,7 @@ export default async function VendorDetailPage({ params }: { params: { id: strin
   });
 
   const buildings = await prisma.building.findMany({ orderBy: { name: 'asc' } });
+  const categories = await prisma.expenseCategory.findMany({ orderBy: { sortOrder: 'asc' } });
   const me = await getCurrentUser();
 
   const documentsWithSignedUrls = await Promise.all(
@@ -37,5 +38,5 @@ export default async function VendorDetailPage({ params }: { params: { id: strin
     documents: documentsWithSignedUrls,
   };
 
-  return <VendorDetailClient vendor={enriched as any} buildings={buildings} isAdmin={me?.role === 'ADMIN'} />;
+  return <VendorDetailClient vendor={enriched as any} buildings={buildings} categories={categories} isAdmin={me?.role === 'ADMIN'} />;
 }

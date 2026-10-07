@@ -51,6 +51,11 @@ export default function NewInvoiceForm({
   const [fileQueue, setFileQueue] = useState<File[]>([]);
   const [queueIndex, setQueueIndex] = useState(0);
   const [savedCount, setSavedCount] = useState(0);
+  // Para lotes de un mismo proveedor/edificio (p. ej. 50 recibos de CFE de un
+  // solo edificio): si está activo, el proveedor, la categoría y el edificio
+  // elegidos en la primera factura se mantienen para todo el lote, en vez de
+  // limpiarse después de cada "Guardar y continuar".
+  const [lockVendorBuilding, setLockVendorBuilding] = useState(false);
 
   const totalNum = parseFloat(total) || 0;
   const allocatedSum = allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
@@ -63,10 +68,23 @@ export default function NewInvoiceForm({
 
   // Limpia los campos de la factura actual para pasar a la siguiente del
   // lote, sin perder la lista de edificios/proveedores/categorías.
-  function resetInvoiceFields() {
-    setVendorId('');
+  // `preserveVendorAndBuilding`: para lotes de un solo proveedor/edificio
+  // (p. ej. 50 recibos de CFE de un mismo edificio) — mantiene el proveedor,
+  // la categoría y el edificio ya elegidos, y solo limpia el monto (cada
+  // recibo trae uno distinto) y los datos propios de cada factura.
+  function resetInvoiceFields(preserveVendorAndBuilding = false) {
+    if (!preserveVendorAndBuilding) {
+      setVendorId('');
+      setCategoryId('');
+      setAllocations([{ buildingId: '', unitId: '', amount: '' }]);
+    } else {
+      setAllocations((rows) => {
+        const first = rows[0];
+        if (!first || !first.buildingId) return [{ buildingId: '', unitId: '', amount: '' }];
+        return [{ buildingId: first.buildingId, unitId: first.unitId, amount: '' }];
+      });
+    }
     setInvoiceNumber('');
-    setCategoryId('');
     setReceivedDate(new Date().toISOString().slice(0, 10));
     setIssueDate('');
     setDueDate('');
@@ -77,7 +95,6 @@ export default function NewInvoiceForm({
     setFileUrl('');
     setFileName('');
     setPreviewUrl('');
-    setAllocations([{ buildingId: '', unitId: '', amount: '' }]);
     setExtractNote(null);
     setError(null);
   }
@@ -88,7 +105,7 @@ export default function NewInvoiceForm({
     setFileQueue(files);
     setQueueIndex(0);
     setSavedCount(0);
-    resetInvoiceFields();
+    resetInvoiceFields(false);
     handleFile(files[0]);
   }
 
@@ -96,7 +113,7 @@ export default function NewInvoiceForm({
   // archivo no es una factura válida o ya estaba cargada).
   function skipQueueItem() {
     const nextIndex = queueIndex + 1;
-    resetInvoiceFields();
+    resetInvoiceFields(lockVendorBuilding);
     if (nextIndex < fileQueue.length) {
       setQueueIndex(nextIndex);
       handleFile(fileQueue[nextIndex]);
@@ -154,6 +171,11 @@ export default function NewInvoiceForm({
     if (matchedBuildings.length > 0 && f.total) {
       const share = (parseFloat(f.total) / matchedBuildings.length).toFixed(2);
       setAllocations(matchedBuildings.map((buildingId) => ({ buildingId, unitId: '', amount: share })));
+    } else if (f.total) {
+      // No se detectó edificio en el texto, pero si ya hay uno solo elegido
+      // (por ejemplo, viene de "mismo proveedor y edificio para todo el
+      // lote"), le asignamos el 100% del total automáticamente.
+      setAllocations((rows) => (rows.length === 1 && rows[0].buildingId ? [{ ...rows[0], amount: String(f.total) }] : rows));
     }
 
     setExtractNote('Datos extraídos automáticamente — revisa antes de guardar.');
@@ -243,7 +265,7 @@ export default function NewInvoiceForm({
       const nextIndex = queueIndex + 1;
       setSavedCount((c) => c + 1);
       setQueueIndex(nextIndex);
-      resetInvoiceFields();
+      resetInvoiceFields(lockVendorBuilding);
       handleFile(fileQueue[nextIndex]);
       return;
     }
@@ -272,6 +294,21 @@ export default function NewInvoiceForm({
               Factura {queueIndex + 1} de {fileQueue.length}
               {savedCount > 0 ? ` · ${savedCount} guardada${savedCount === 1 ? '' : 's'} de esta tanda` : ''}
             </p>
+          )}
+          {inQueue && (
+            <label className="flex items-start gap-2 text-xs text-gray-600 mt-2">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={lockVendorBuilding}
+                onChange={(e) => setLockVendorBuilding(e.target.checked)}
+              />
+              <span>
+                Usar el mismo proveedor, categoría y edificio en todo el lote (ideal para CFE, Telmex, etc. — varios
+                recibos del mismo servicio para un solo edificio). Elige proveedor/edificio en esta primera factura;
+                el resto del lote los hereda, solo revisa monto y fecha.
+              </span>
+            </label>
           )}
           {extracting && <p className="text-sm text-brand-600 mt-2">Extrayendo datos…</p>}
           {extractNote && <p className="text-sm text-gray-600 mt-2">{extractNote}</p>}

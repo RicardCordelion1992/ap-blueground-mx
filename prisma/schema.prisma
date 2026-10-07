@@ -83,6 +83,11 @@ defaultCategory ExpenseCategory? @relation(fields: [defaultCategoryId], referenc
 status String @default("active") // active | inactive
 // Computed at read time from documents+fields, but cached here for fast filtering/reporting.
 readiness VendorReadiness @default(INCOMPLETE)
+// ADMIN-only manual Ready: when true, this vendor is always "Ready" regardless
+// of missing fields/documents — some vendors don't need the full AML/KYC file.
+// Set from the vendor detail page ("Marcar como Ready (manual)");
+// recomputeVendorReadiness() respects it on every recalculation.
+readinessOverride Boolean @default(false)
 
 notes String?
 createdAt DateTime @default(now())
@@ -146,7 +151,7 @@ vendorDocuments VendorDocument[]
 // ---------- Properties: Building (cost center) → Unit (depa / PO) ----------
 
 model Building {
-id String @id @default(cuid())
+id String @id @defafult(cuid())
 name String @unique // e.g. "Edgar Allan Poe 362"
 city String @default("CDMX")
 pmsCode String? // Buildings module code in the internal PMS, if known
@@ -268,7 +273,7 @@ action String // e.g. "vendor.document.approved", "invoice.marked_paid"
 entityType String
 entityId String
 detail String?
-createdAt DateTime @default(now())
+createdAt DateTime @defafult(now())
 
 @@index([entityType, entityId])
 }

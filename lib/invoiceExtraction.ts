@@ -21,6 +21,11 @@ vendorName, vendorRfc, invoiceNumber, issueDate (formato YYYY-MM-DD), billingSta
 subtotal (número), taxAmount (número), total (número), currency (MXN/USD),
 suggestedCategory (una categoría de gasto breve en español), suggestedBuildings (arreglo de nombres de edificio si el texto menciona alguno).`;
 
+// Modelo vigente de Claude para esta cuenta. `claude-sonnet-4-5` quedó
+// retirado por Anthropic (ver error 404 "not_found_error" en producción);
+// `claude-sonnet-5` es el modelo activo actual.
+const MODEL = 'claude-sonnet-5';
+
 function getClient() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY no está configurada.');
@@ -39,7 +44,7 @@ function parseJsonLoose(text: string): any {
 export async function extractFromText(invoiceText: string): Promise<ExtractedInvoiceFields> {
   const client = getClient();
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: MODEL,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: `Texto de la factura:\n\n${invoiceText.slice(0, 12000)}` }],
@@ -52,7 +57,7 @@ export async function extractFromText(invoiceText: string): Promise<ExtractedInv
 export async function extractFromImage(base64Png: string): Promise<ExtractedInvoiceFields> {
   const client = getClient();
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: MODEL,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -79,7 +84,7 @@ export async function extractFromPdf(base64Pdf: string): Promise<ExtractedInvoic
   // `as any`: el SDK instalado todavía no tipa el bloque "document" en su
   // unión de tipos de contenido, aunque la API de Anthropic sí lo acepta.
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: MODEL,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [

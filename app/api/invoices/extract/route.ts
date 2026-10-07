@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/currentUser';
-import { extractFromText, extractFromImage } from '@/lib/invoiceExtraction';
+import { extractFromText, extractFromImage, extractFromPdf } from '@/lib/invoiceExtraction';
 import { createAdminClient } from '@/lib/supabase/server';
 import { INVOICES_BUCKET, signDocUrl } from '@/lib/signedUrl';
 
@@ -39,18 +39,25 @@ export async function POST(req: NextRequest) {
   let fields;
   try {
     if (file.type === 'application/pdf') {
-      // Text-first: most CFDI PDFs carry a real text layer.
-      const pdfParse = (await import('pdf-parse')).default;
-      const parsed = await pdfParse(buffer);
-      if (parsed.text && parsed.text.trim().length > 40) {
-        fields = await extractFromText(parsed.text);
+      // Text-first: most CFDI PDFs carry a real text layer, which is cheaper
+      // and faster than vision. If the local parser can't read this PDF's
+      // internal structure (some billing systems produce PDFs that trip up
+      // pdf-parse) or there's no usable text layer (scanned invoice), fall
+      // back to sending the PDF straight to Claude, which reads PDFs natively
+      // (text + visual layout) and doesn't depend on the local parser.
+      let text = '';
+      try {
+        const pdfParse = (await import('pdf-parse')).default;
+        const parsed = await pdfParse(buffer);
+        text = parsed.text || '';
+      } catch {
+        text = '';
+      }
+      if (text.trim().length > 40) {
+        fields = await extractFromText(text);
       } else {
-        return NextResponse.json({
-          error: 'No se encontró texto en el PDF (parece escaneado). Sube una foto/imagen en su lugar, o captura los datos manualmente.',
-          fileUrl: path,
-          previewUrl,
-          fileName: file.name,
-        }, { status: 422 });
+        const base64 = buffer.toString('base64');
+        fields = await extractFromPdf(base64);
       }
     } else if (file.type.startsWith('image/')) {
       const base64 = buffer.toString('base64');

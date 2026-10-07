@@ -68,3 +68,28 @@ export async function extractFromImage(base64Png: string): Promise<ExtractedInvo
   const text = msg.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
   return parseJsonLoose(text);
 }
+
+// Native PDF fallback: Claude lee el PDF directamente (texto + diseño visual),
+// usado cuando pdf-parse no logra leer la estructura interna del archivo, o
+// cuando no hay una capa de texto utilizable (por ejemplo, facturas escaneadas).
+// Esto evita depender de que la librería local entienda el PDF exacto que
+// produjo el sistema de facturación del proveedor.
+export async function extractFromPdf(base64Pdf: string): Promise<ExtractedInvoiceFields> {
+  const client = getClient();
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Pdf } },
+          { type: 'text', text: 'Extrae los datos de esta factura.' },
+        ],
+      },
+    ],
+  });
+  const text = msg.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
+  return parseJsonLoose(text);
+}

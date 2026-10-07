@@ -44,12 +44,67 @@ export default function NewInvoiceForm({
   const [saving, setSaving] = useState(false);
   const [newBuildingName, setNewBuildingName] = useState('');
 
+  // Carga por lotes: se pueden seleccionar varios archivos a la vez, pero cada
+  // factura se revisa y se guarda una por una (no se combinan en una sola).
+  // fileQueue = todos los archivos elegidos; queueIndex = cuál se está
+  // revisando ahora; savedCount = cuántas de esta tanda ya se guardaron.
+  const [fileQueue, setFileQueue] = useState<File[]>([]);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+
   const totalNum = parseFloat(total) || 0;
   const allocatedSum = allocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
   const diff = totalNum - allocatedSum;
 
   const selectedVendor = vendors.find((v) => v.id === vendorId);
   const isPdfPreview = /\.pdf($|\?)/i.test(fileUrl) || /\.pdf$/i.test(fileName || '');
+  const inQueue = fileQueue.length > 1;
+  const hasNextInQueue = inQueue && queueIndex + 1 < fileQueue.length;
+
+  // Limpia los campos de la factura actual para pasar a la siguiente del
+  // lote, sin perder la lista de edificios/proveedores/categorías.
+  function resetInvoiceFields() {
+    setVendorId('');
+    setInvoiceNumber('');
+    setCategoryId('');
+    setReceivedDate(new Date().toISOString().slice(0, 10));
+    setIssueDate('');
+    setDueDate('');
+    setSubtotal('');
+    setTaxAmount('');
+    setTotal('');
+    setNotes('');
+    setFileUrl('');
+    setFileName('');
+    setPreviewUrl('');
+    setAllocations([{ buildingId: '', unitId: '', amount: '' }]);
+    setExtractNote(null);
+    setError(null);
+  }
+
+  function handleFilesSelected(selected: FileList | null) {
+    const files = Array.from(selected || []);
+    if (files.length === 0) return;
+    setFileQueue(files);
+    setQueueIndex(0);
+    setSavedCount(0);
+    resetInvoiceFields();
+    handleFile(files[0]);
+  }
+
+  // Pasa a la siguiente factura del lote sin guardar la actual (útil si el
+  // archivo no es una factura válida o ya estaba cargada).
+  function skipQueueItem() {
+    const nextIndex = queueIndex + 1;
+    resetInvoiceFields();
+    if (nextIndex < fileQueue.length) {
+      setQueueIndex(nextIndex);
+      handleFile(fileQueue[nextIndex]);
+    } else {
+      setFileQueue([]);
+      setQueueIndex(0);
+    }
+  }
 
   async function handleFile(file: File) {
     setExtracting(true);
@@ -180,6 +235,19 @@ export default function NewInvoiceForm({
       return;
     }
     const invoice = await res.json();
+
+    // Si viene de un lote y quedan más archivos, nos quedamos en el
+    // formulario: se limpia y se extraen los datos de la siguiente factura
+    // automáticamente, en vez de navegar a la factura que se acaba de guardar.
+    if (hasNextInQueue) {
+      const nextIndex = queueIndex + 1;
+      setSavedCount((c) => c + 1);
+      setQueueIndex(nextIndex);
+      resetInvoiceFields();
+      handleFile(fileQueue[nextIndex]);
+      return;
+    }
+
     router.push(`/invoices/${invoice.id}`);
   }
 
@@ -187,16 +255,31 @@ export default function NewInvoiceForm({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <form onSubmit={submit} className="space-y-6">
         <div className="card p-4">
-          <label className="label">Subir factura (PDF o imagen) — extracción automática</label>
+          <label className="label">Subir factura(s) (PDF o imagen) — extracción automática</label>
           <input
             type="file"
+            multiple
             accept="application/pdf,image/*"
-            disabled={extracting}
-            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+            disabled={extracting || saving}
+            onChange={(e) => handleFilesSelected(e.target.files)}
             className="text-sm"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Puedes seleccionar varios archivos a la vez — se revisan y se guardan uno por uno, sin mezclarse.
+          </p>
+          {inQueue && (
+            <p className="text-sm font-medium text-brand-700 mt-2">
+              Factura {queueIndex + 1} de {fileQueue.length}
+              {savedCount > 0 ? ` · ${savedCount} guardada${savedCount === 1 ? '' : 's'} de esta tanda` : ''}
+            </p>
+          )}
           {extracting && <p className="text-sm text-brand-600 mt-2">Extrayendo datos…</p>}
           {extractNote && <p className="text-sm text-gray-600 mt-2">{extractNote}</p>}
+          {inQueue && (
+            <button type="button" onClick={skipQueueItem} className="text-xs text-gray-500 hover:underline mt-2">
+              Omitir esta factura y pasar a la siguiente
+            </button>
+          )}
         </div>
 
         <div className="card p-6 space-y-4">
@@ -350,7 +433,7 @@ export default function NewInvoiceForm({
 
         <div className="flex justify-end">
           <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? 'Guardando…' : 'Guardar factura'}
+            {saving ? 'Guardando…' : hasNextInQueue ? 'Guardar y continuar con la siguiente' : 'Guardar factura'}
           </button>
         </div>
       </form>

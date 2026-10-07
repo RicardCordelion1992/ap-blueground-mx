@@ -151,7 +151,7 @@ vendorDocuments VendorDocument[]
 // ---------- Properties: Building (cost center) → Unit (depa / PO) ----------
 
 model Building {
-id String @id @defafult(cuid())
+id String @id @default(cuid())
 name String @unique // e.g. "Edgar Allan Poe 362"
 city String @default("CDMX")
 pmsCode String? // Buildings module code in the internal PMS, if known
@@ -273,7 +273,7 @@ action String // e.g. "vendor.document.approved", "invoice.marked_paid"
 entityType String
 entityId String
 detail String?
-createdAt DateTime @defafult(now())
+createdAt DateTime @default(now())
 
 @@index([entityType, entityId])
 }

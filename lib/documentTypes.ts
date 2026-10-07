@@ -2,18 +2,26 @@
 // Esto alimenta el seed inicial de DocumentType. IMPORTANTE: esta lista es un
 // punto de partida razonable, no asesoría legal — debe validarla el equipo
 // legal/compliance de Blueground antes de depender de ella operativamente.
+//
+// 2026-10: por pedido de administración, "Opinión de cumplimiento SAT (32-D)
+// positiva", "Cuestionario / formato de identificación AML (LFPIORPI)" y "CURP"
+// (el documento, no el campo del formulario) se marcaron como NO requeridas —
+// hay proveedores a los que no se les va a pedir esta documentación. Se dejan
+// en la lista (en vez de borrarlas) para no perder el historial de los
+// documentos ya subidos bajo este tipo; al no ser "required" ya no aparecen
+// en el checklist de un proveedor ni bloquean su "Ready".
 export const DOCUMENT_TYPE_SEED = [
   // Aplica a ambos tipos de persona
   { name: 'Constancia de Situación Fiscal (CSF) vigente', appliesTo: null, required: true, expires: true, sortOrder: 10 },
   { name: 'Comprobante de domicilio fiscal (< 3 meses)', appliesTo: null, required: true, expires: true, sortOrder: 20 },
   { name: 'Estado de cuenta bancario (CLABE) para dispersión', appliesTo: null, required: true, expires: false, sortOrder: 30 },
-  { name: 'Opinión de cumplimiento SAT (32-D) positiva', appliesTo: null, required: true, expires: true, sortOrder: 40 },
-  { name: 'Cuestionario / formato de identificación AML (LFPIORPI)', appliesTo: null, required: true, expires: false, sortOrder: 50 },
+  { name: 'Opinión de cumplimiento SAT (32-D) positiva', appliesTo: null, required: false, expires: true, sortOrder: 40 },
+  { name: 'Cuestionario / formato de identificación AML (LFPIORPI)', appliesTo: null, required: false, expires: false, sortOrder: 50 },
   { name: 'Contrato de arrendamiento o prestación de servicios firmado', appliesTo: null, required: true, expires: false, sortOrder: 60 },
 
   // Persona física
   { name: 'Identificación oficial vigente (INE/pasaporte)', appliesTo: 'FISICA', required: true, expires: true, sortOrder: 100 },
-  { name: 'CURP', appliesTo: 'FISICA', required: true, expires: false, sortOrder: 110 },
+  { name: 'CURP', appliesTo: 'FISICA', required: false, expires: false, sortOrder: 110 },
 
   // Persona moral
   { name: 'Acta constitutiva', appliesTo: 'MORAL', required: true, expires: false, sortOrder: 200 },

@@ -184,7 +184,7 @@ export default function NewInvoiceForm({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <form onSubmit={submit} className="space-y-6">
         <div className="card p-4">
           <label className="label">Subir factura (PDF o imagen) — extracción automática</label>

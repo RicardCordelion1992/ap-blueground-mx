@@ -76,6 +76,8 @@ export async function extractFromImage(base64Png: string): Promise<ExtractedInvo
 // produjo el sistema de facturación del proveedor.
 export async function extractFromPdf(base64Pdf: string): Promise<ExtractedInvoiceFields> {
   const client = getClient();
+  // `as any`: el SDK instalado todavía no tipa el bloque "document" en su
+  // unión de tipos de contenido, aunque la API de Anthropic sí lo acepta.
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-5',
     max_tokens: 1024,
@@ -86,7 +88,7 @@ export async function extractFromPdf(base64Pdf: string): Promise<ExtractedInvoic
         content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Pdf } },
           { type: 'text', text: 'Extrae los datos de esta factura.' },
-        ],
+        ] as any,
       },
     ],
   });

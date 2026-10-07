@@ -40,6 +40,13 @@ export function missingVendorFields(vendor: VendorForReadiness): string[] {
 //   2. every required, non-expired DocumentType (applicable to this person
 //      type) having a VendorDocument with status VALID or RECEIVED.
 // Call this after any vendor field edit or document status change.
+//
+// Manual admin Ready: a vendor with readinessOverride = true is always
+// reported as "Ready", regardless of missing fields/documents — some
+// vendors don't need the full documentation, so an ADMIN can mark one as
+// Ready manually from the vendor detail page ("Marcar como Ready (manual)").
+// missingFields/missingDocs are still computed and returned so the UI can
+// show what would otherwise be missing.
 export async function recomputeVendorReadiness(vendorId: string) {
   const vendor = await prisma.vendor.findUniqueOrThrow({
     where: { id: vendorId },
@@ -64,7 +71,7 @@ export async function recomputeVendorReadiness(vendorId: string) {
     return false;
   });
 
-  const ready = missingFields.length === 0 && missingDocs.length === 0;
+  const ready = vendor.readinessOverride || (missingFields.length === 0 && missingDocs.length === 0);
 
   await prisma.vendor.update({
     where: { id: vendorId },
@@ -75,5 +82,6 @@ export async function recomputeVendorReadiness(vendorId: string) {
     ready,
     missingFields,
     missingDocs: missingDocs.map((d) => d.name),
+    overridden: vendor.readinessOverride,
   };
 }

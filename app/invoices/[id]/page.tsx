@@ -1,7 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { notFound } from 'next/navigation';
 import MarkPaidButton from './MarkPaidButton';
+import ResubmitButton from './ResubmitButton';
+import ApprovalButtons from '../ApprovalButtons';
 import { INVOICES_BUCKET, signDocUrl } from '@/lib/signedUrl';
+import { getCurrentUser } from '@/lib/currentUser';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +14,9 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
     include: { vendor: true, category: true, allocations: { include: { building: true, unit: true } }, createdBy: true },
   });
   if (!invoice) notFound();
+
+  const user = await getCurrentUser();
+  const canApprove = user?.role === 'ADMIN';
 
   const signedFileUrl = await signDocUrl(INVOICES_BUCKET, invoice.fileUrl);
   // PDF se embebe en un iframe; cualquier otra cosa (png/jpg) se muestra como imagen.
@@ -29,15 +35,30 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
           <div className="flex items-center gap-2">
             {invoice.status === 'PAID' ? (
               <span className="badge bg-gray-100 text-gray-700">Pagada</span>
-            ) : invoice.payable ? (
-              <span className="badge-ready">Pagable</span>
+            ) : invoice.status === 'APPROVED' ? (
+              invoice.payable ? (
+                <span className="badge-ready">Aprobada · Pagable</span>
+              ) : (
+                <span className="badge-incomplete">Aprobada · No pagable</span>
+              )
+            ) : invoice.status === 'REJECTED' ? (
+              <span className="badge bg-red-50 text-red-700">Rechazada</span>
             ) : (
-              <span className="badge-incomplete">No pagable — proveedor incompleto</span>
+              <span className="badge bg-amber-50 text-amber-700">Por aprobar</span>
             )}
           </div>
         </div>
 
-        {invoice.status === 'PENDING' && <MarkPaidButton invoiceId={invoice.id} disabled={!invoice.payable} />}
+        {invoice.status === 'PENDING' && <ApprovalButtons invoiceId={invoice.id} canApprove={canApprove} />}
+        {invoice.status === 'APPROVED' && <MarkPaidButton invoiceId={invoice.id} disabled={!invoice.payable} />}
+        {invoice.status === 'REJECTED' && (
+          <div className="card p-4 border border-red-200 bg-red-50 space-y-2">
+            <p className="text-sm text-red-700">
+              Rechazada{invoice.rejectedReason ? `: ${invoice.rejectedReason}` : ''}
+            </p>
+            <ResubmitButton invoiceId={invoice.id} />
+          </div>
+        )}
 
         <div className="card p-4 grid grid-cols-3 gap-4 text-sm">
           <div>

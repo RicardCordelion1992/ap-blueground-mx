@@ -88,3 +88,57 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return NextResponse.json(user);
 }
+
+// Permanently delete a user. ADMIN-only, and an admin can't delete
+// themselves (same self-lockout guard as above — have another admin do it).
+//
+// A hard delete is only allowed when the user has NO associated history
+// (no invoices they captured or approved, no uploaded vendor documents, no
+// audit-log activity) — deleting a row that other records point to would
+// either fail at the database level or silently orphan that history. If
+// the person has any history, they can't be deleted: the admin should use
+// "Desactivar" instead, which blocks their access immediately while
+// keeping their history intact. This mirrors how the rest of the app
+// treats historical data (facturas, documentos) as something to preserve,
+// not erase.
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const me = await getCurrentUser();
+  if (!me || me.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
+
+  if (params.id === me.id) {
+    return NextResponse.json({ error: 'No puedes eliminar tu propia cuenta.' }, { status: 400 });
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: params.id } });
+  if (!target) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+
+  const [invoicesCreated, invoicesApproved, documentsUploaded, auditLogs] = await Promise.all([
+    prisma.invoice.count({ where: { createdById: params.id } }),
+    prisma.invoice.count({ where: { approvedById: params.id } }),
+    prisma.vendorDocument.count({ where: { uploadedById: params.id } }),
+    prisma.auditLog.count({ where: { userId: params.id } }),
+  ]);
+
+  if (invoicesCreated > 0 || invoicesApproved > 0 || documentsUploaded > 0 || auditLogs > 0) {
+    return NextResponse.json(
+      {
+        error:
+          'Este usuario tiene historial asociado (facturas, documentos o actividad registrada) y no se puede eliminar sin perder ese rastro. Usa "Desactivar" en su lugar — bloquea su acceso de inmediato y conserva su historial.',
+      },
+      { status: 409 }
+    );
+  }
+
+  const targetAny = target as any;
+  if (targetAny.authUserId) {
+    const admin = createAdminClient();
+    await admin.auth.admin.deleteUser(targetAny.authUserId);
+  }
+
+  await prisma.user.delete({ where: { id: params.id } });
+  await logAudit(me.id, 'delete', 'User', params.id, target.email);
+
+  return NextResponse.json({ ok: true });
+}

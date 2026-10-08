@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Vendor = { id: string; name: string; readiness: 'READY' | 'INCOMPLETE' };
@@ -10,14 +10,40 @@ type Category = { id: string; name: string };
 
 type Allocation = { buildingId: string; unitId: string; amount: string };
 
+type ExtractedFields = {
+  vendorName?: string;
+  vendorRfc?: string;
+  invoiceNumber?: string;
+  issueDate?: string;
+  billingStart?: string;
+  billingEnd?: string;
+  subtotal?: number;
+  taxAmount?: number;
+  total?: number;
+  currency?: string;
+  suggestedCategory?: string;
+  suggestedBuildings?: string[];
+};
+
+type InitialInbound = {
+  id: string;
+  fromEmail: string;
+  fields: ExtractedFields;
+  fileUrl: string;
+  previewUrl: string | null;
+  fileName: string;
+} | null;
+
 export default function NewInvoiceForm({
   vendors,
   buildings: initialBuildings,
   categories,
+  initialInbound,
 }: {
   vendors: Vendor[];
   buildings: Building[];
   categories: Category[];
+  initialInbound?: InitialInbound;
 }) {
   const router = useRouter();
   const [buildings, setBuildings] = useState(initialBuildings);
@@ -33,9 +59,10 @@ export default function NewInvoiceForm({
   const [notes, setNotes] = useState('');
   const [fileUrl, setFileUrl] = useState('');
   const [fileName, setFileName] = useState('');
-  // Vista previa: enlace firmado temporal que regresa /api/invoices/extract,
-  // para mostrar el PDF/imagen que se acaba de subir mientras se revisan
-  // los datos extraídos (no se guarda en la factura, solo fileUrl se guarda).
+  // Vista previa: enlace firmado temporal que regresa /api/invoices/extract (o,
+  // si venimos de la Bandeja de correo, el que ya se firmó en el servidor),
+  // para mostrar el PDF/imagen mientras se revisan los datos extraídos (no se
+  // guarda en la factura, solo fileUrl se guarda).
   const [previewUrl, setPreviewUrl] = useState('');
   const [allocations, setAllocations] = useState<Allocation[]>([{ buildingId: '', unitId: '', amount: '' }]);
   const [extracting, setExtracting] = useState(false);
@@ -43,6 +70,11 @@ export default function NewInvoiceForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [newBuildingName, setNewBuildingName] = useState('');
+
+  // Si esta factura viene de la Bandeja de correo (/invoices/bandeja), este id
+  // viaja en el POST a /api/invoices para que el servidor marque ese correo
+  // como "ya capturado" y lo vincule con la factura creada.
+  const [inboundEmailId, setInboundEmailId] = useState<string | null>(initialInbound?.id ?? null);
 
   // Carga por lotes: se pueden seleccionar varios archivos a la vez, pero cada
   // factura se revisa y se guarda una por una (no se combinan en una sola).
@@ -65,6 +97,60 @@ export default function NewInvoiceForm({
   const isPdfPreview = /\.pdf($|\?)/i.test(fileUrl) || /\.pdf$/i.test(fileName || '');
   const inQueue = fileQueue.length > 1;
   const hasNextInQueue = inQueue && queueIndex + 1 < fileQueue.length;
+
+  // Aplica los campos extraídos (de /api/invoices/extract, o de la Bandeja de
+  // correo) al formulario: datos básicos + intento de adivinar proveedor,
+  // categoría y edificio(s) por nombre.
+  function applyExtractedFields(f: ExtractedFields) {
+    if (f.invoiceNumber) setInvoiceNumber(f.invoiceNumber);
+    if (f.issueDate) setIssueDate(f.issueDate);
+    if (f.subtotal) setSubtotal(String(f.subtotal));
+    if (f.taxAmount) setTaxAmount(String(f.taxAmount));
+    if (f.total) setTotal(String(f.total));
+
+    if (f.vendorRfc) {
+      const match = vendors.find((v) => v.name.toLowerCase().includes((f.vendorName || '').toLowerCase()));
+      if (match) setVendorId(match.id);
+    }
+    if (f.suggestedCategory) {
+      const cat = categories.find((c) => c.name.toLowerCase() === String(f.suggestedCategory).toLowerCase());
+      if (cat) setCategoryId(cat.id);
+    }
+
+    const matchedBuildings: string[] = [];
+    if (Array.isArray(f.suggestedBuildings)) {
+      for (const name of f.suggestedBuildings) {
+        const b = buildings.find((bd) => bd.name.toLowerCase() === String(name).toLowerCase());
+        if (b) matchedBuildings.push(b.id);
+      }
+    }
+    if (matchedBuildings.length > 0 && f.total) {
+      const share = (parseFloat(String(f.total)) / matchedBuildings.length).toFixed(2);
+      setAllocations(matchedBuildings.map((buildingId) => ({ buildingId, unitId: '', amount: share })));
+    } else if (f.total) {
+      // No se detectó edificio en el texto, pero si ya hay uno solo elegido
+      // (por ejemplo, viene de "mismo proveedor y edificio para todo el
+      // lote"), le asignamos el 100% del total automáticamente.
+      setAllocations((rows) => (rows.length === 1 && rows[0].buildingId ? [{ ...rows[0], amount: String(f.total) }] : rows));
+    }
+  }
+
+  // Si llegamos desde la Bandeja de correo (?inbound=...), el archivo y los
+  // datos ya están listos del lado del servidor — no hace falta subir nada.
+  useEffect(() => {
+    if (!initialInbound) return;
+    setInboundEmailId(initialInbound.id);
+    setFileUrl(initialInbound.fileUrl);
+    setFileName(initialInbound.fileName);
+    if (initialInbound.previewUrl) setPreviewUrl(initialInbound.previewUrl);
+    applyExtractedFields(initialInbound.fields || {});
+    setExtractNote(
+      initialInbound.fields && Object.keys(initialInbound.fields).length > 0
+        ? 'Datos precargados desde un correo reenviado — revisa antes de guardar.'
+        : 'No se pudo extraer automáticamente de este correo — captura los datos manualmente.'
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Limpia los campos de la factura actual para pasar a la siguiente del
   // lote, sin perder la lista de edificios/proveedores/categorías.
@@ -145,39 +231,7 @@ export default function NewInvoiceForm({
       return;
     }
 
-    const f = body.fields || {};
-    if (f.invoiceNumber) setInvoiceNumber(f.invoiceNumber);
-    if (f.issueDate) setIssueDate(f.issueDate);
-    if (f.subtotal) setSubtotal(String(f.subtotal));
-    if (f.taxAmount) setTaxAmount(String(f.taxAmount));
-    if (f.total) setTotal(String(f.total));
-
-    if (f.vendorRfc) {
-      const match = vendors.find((v) => v.name.toLowerCase().includes((f.vendorName || '').toLowerCase()));
-      if (match) setVendorId(match.id);
-    }
-    if (f.suggestedCategory) {
-      const cat = categories.find((c) => c.name.toLowerCase() === String(f.suggestedCategory).toLowerCase());
-      if (cat) setCategoryId(cat.id);
-    }
-
-    const matchedBuildings: string[] = [];
-    if (Array.isArray(f.suggestedBuildings)) {
-      for (const name of f.suggestedBuildings) {
-        const b = buildings.find((bd) => bd.name.toLowerCase() === String(name).toLowerCase());
-        if (b) matchedBuildings.push(b.id);
-      }
-    }
-    if (matchedBuildings.length > 0 && f.total) {
-      const share = (parseFloat(f.total) / matchedBuildings.length).toFixed(2);
-      setAllocations(matchedBuildings.map((buildingId) => ({ buildingId, unitId: '', amount: share })));
-    } else if (f.total) {
-      // No se detectó edificio en el texto, pero si ya hay uno solo elegido
-      // (por ejemplo, viene de "mismo proveedor y edificio para todo el
-      // lote"), le asignamos el 100% del total automáticamente.
-      setAllocations((rows) => (rows.length === 1 && rows[0].buildingId ? [{ ...rows[0], amount: String(f.total) }] : rows));
-    }
-
+    applyExtractedFields(body.fields || {});
     setExtractNote('Datos extraídos automáticamente — revisa antes de guardar.');
   }
 
@@ -244,6 +298,7 @@ export default function NewInvoiceForm({
         notes: notes || null,
         fileUrl: fileUrl || null,
         fileName: fileName || null,
+        inboundEmailId: inboundEmailId || null,
         allocations: allocations
           .filter((a) => a.buildingId && a.amount)
           .map((a) => ({ buildingId: a.buildingId, unitId: a.unitId || null, amount: parseFloat(a.amount) })),
@@ -277,18 +332,34 @@ export default function NewInvoiceForm({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <form onSubmit={submit} className="space-y-6">
         <div className="card p-4">
-          <label className="label">Subir factura(s) (PDF o imagen) — extracción automática</label>
-          <input
-            type="file"
-            multiple
-            accept="application/pdf,image/*"
-            disabled={extracting || saving}
-            onChange={(e) => handleFilesSelected(e.target.files)}
-            className="text-sm"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Puedes seleccionar varios archivos a la vez — se revisan y se guardan uno por uno, sin mezclarse.
-          </p>
+          {inboundEmailId ? (
+            <>
+              <label className="label">Factura recibida por correo</label>
+              <p className="text-sm text-gray-600">
+                {initialInbound?.fromEmail && (
+                  <>
+                    De: <strong>{initialInbound.fromEmail}</strong> ·{' '}
+                  </>
+                )}
+                El archivo y los datos ya se cargaron abajo — revisa, completa proveedor/edificio y guarda.
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="label">Subir factura(s) (PDF o imagen) — extracción automática</label>
+              <input
+                type="file"
+                multiple
+                accept="application/pdf,image/*"
+                disabled={extracting || saving}
+                onChange={(e) => handleFilesSelected(e.target.files)}
+                className="text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Puedes seleccionar varios archivos a la vez — se revisan y se guardan uno por uno, sin mezclarse.
+              </p>
+            </>
+          )}
           {inQueue && (
             <p className="text-sm font-medium text-brand-700 mt-2">
               Factura {queueIndex + 1} de {fileQueue.length}

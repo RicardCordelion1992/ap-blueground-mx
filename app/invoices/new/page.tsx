@@ -11,7 +11,7 @@ export default async function NewInvoicePage() {
   ]);
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-6xl">
       <h1 className="text-xl font-semibold mb-4">Nueva factura</h1>
       <NewInvoiceForm vendors={vendors} buildings={buildings} categories={categories} />
     </div>

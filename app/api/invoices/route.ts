@@ -27,6 +27,9 @@ const InvoiceInput = z.object({
   fileUrl: z.string().optional().nullable(),
   fileName: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Si esta factura viene de la Bandeja de correo (/invoices/bandeja), aquí
+  // llega el id del correo original para marcarlo como ya capturado.
+  inboundEmailId: z.string().optional().nullable(),
   allocations: z.array(AllocationInput).min(1, 'Se requiere al menos una asignación a un edificio'),
 });
 
@@ -99,5 +102,19 @@ export async function POST(req: NextRequest) {
   });
 
   await logAudit(user.id, 'create', 'Invoice', invoice.id, `${vendor.name} · ${invoice.total}`);
+
+  // Si esta factura se capturó desde la Bandeja de correo, marcamos ese
+  // correo como "ya capturado" y lo vinculamos — así deja de aparecer en la
+  // Bandeja. Un fallo aquí no debe tumbar la creación de la factura, que ya
+  // está guardada.
+  if (data.inboundEmailId) {
+    await prisma.inboundInvoiceEmail
+      .update({
+        where: { id: data.inboundEmailId },
+        data: { status: 'IMPORTED', importedInvoiceId: invoice.id },
+      })
+      .catch(() => {});
+  }
+
   return NextResponse.json(invoice, { status: 201 });
 }

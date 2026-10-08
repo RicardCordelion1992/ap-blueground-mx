@@ -6,6 +6,8 @@ import SignOutButton from './SignOutButton';
 const LINKS = [
   { href: '/', label: 'Panel' },
   { href: '/invoices', label: 'Facturas' },
+  { href: '/invoices/aprobar', label: 'Aprobar' },
+  { href: '/invoices/pagar', label: 'Pagar' },
   { href: '/vendors', label: 'Proveedores' },
   { href: '/buildings', label: 'Edificios' },
   { href: '/reports', label: 'Reportes' },

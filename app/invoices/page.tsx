@@ -23,10 +23,12 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
         </Link>
       </div>
 
-      <div className="flex gap-2 text-sm">
+      <div className="flex gap-2 text-sm flex-wrap">
         <Link href="/invoices" className={`px-3 py-1.5 rounded-md ${!searchParams.status ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Todas</Link>
-        <Link href="/invoices?status=PENDING" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'PENDING' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Pendientes</Link>
+        <Link href="/invoices?status=PENDING" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'PENDING' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Por aprobar</Link>
+        <Link href="/invoices?status=APPROVED" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'APPROVED' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Aprobadas</Link>
         <Link href="/invoices?status=PAID" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'PAID' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Pagadas</Link>
+        <Link href="/invoices?status=REJECTED" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'REJECTED' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Rechazadas</Link>
       </div>
 
       <div className="card overflow-hidden">
@@ -60,10 +62,16 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
                 <td className="px-4 py-2">
                   {inv.status === 'PAID' ? (
                     <span className="badge bg-gray-100 text-gray-700">Pagada</span>
-                  ) : inv.payable ? (
-                    <span className="badge-ready">Pagable</span>
+                  ) : inv.status === 'APPROVED' ? (
+                    inv.payable ? (
+                      <span className="badge-ready">Aprobada · Pagable</span>
+                    ) : (
+                      <span className="badge-incomplete">Aprobada · No pagable</span>
+                    )
+                  ) : inv.status === 'REJECTED' ? (
+                    <span className="badge bg-red-50 text-red-700">Rechazada</span>
                   ) : (
-                    <span className="badge-incomplete">No pagable</span>
+                    <span className="badge bg-amber-50 text-amber-700">Por aprobar</span>
                   )}
                 </td>
               </tr>

@@ -10,6 +10,12 @@ export type MatchResult =
 
 const AMOUNT_TOLERANCE = 1; // $1 MXN de margen por redondeo
 
+// Pagos de CFE hechos por Mercado Pago cobran una comisión fija por cada recibo pagado, así que
+// el monto del comprobante puede venir $12 MXN más alto que el total de la factura (o, si el
+// comprobante cubre varios recibos en un solo pago, $12 más por cada uno de ellos). El matching
+// siempre prueba el monto tal cual Y el monto menos esta comisión, para no perder esos casos.
+const MERCADOPAGO_RECEIPT_FEE = 12;
+
 function normalize(s: string): string {
   return s
     .toLowerCase()
@@ -34,18 +40,26 @@ function nameLooksRelated(beneficiary: string | undefined, vendorName: string): 
   return shared > 0;
 }
 
+// ¿El monto del comprobante corresponde a esta factura? Prueba el monto exacto y, por si se
+// pagó por Mercado Pago, el monto menos la comisión por recibo.
+function amountMatchesSingle(extractedAmount: number, invoiceTotal: number): boolean {
+  if (Math.abs(invoiceTotal - extractedAmount) <= AMOUNT_TOLERANCE) return true;
+  if (Math.abs(invoiceTotal - (extractedAmount - MERCADOPAGO_RECEIPT_FEE)) <= AMOUNT_TOLERANCE) return true;
+  return false;
+}
+
 // Busca un subconjunto (2 a 6 facturas) de `candidates` cuya suma de total coincida con `target`
-// dentro de la tolerancia. Si encuentra más de una combinación posible, es ambiguo -> null.
-function findSubsetSum(
-  candidates: { id: string; total: number }[],
-  target: number
-): string[] | null {
+// dentro de la tolerancia — probando también la suma + comisión de Mercado Pago (12 por cada
+// recibo incluido en el subconjunto). Si encuentra más de una combinación posible, es
+// ambiguo -> null.
+function findSubsetSum(candidates: { id: string; total: number }[], target: number): string[] | null {
   const n = candidates.length;
   if (n > 14) return null; // evita explosión combinatoria — en la práctica nunca hay tantas candidatas del mismo proveedor sin pagar
   const found: string[][] = [];
   for (let mask = 1; mask < 1 << n; mask++) {
     // Limitar a combinaciones de hasta 6 facturas (un pago que cubra más de 6 es muy raro).
-    if (popcount(mask) > 6) continue;
+    const count = popcount(mask);
+    if (count > 6) continue;
     let sum = 0;
     const ids: string[] = [];
     for (let i = 0; i < n; i++) {
@@ -54,7 +68,9 @@ function findSubsetSum(
         ids.push(candidates[i].id);
       }
     }
-    if (Math.abs(sum - target) <= AMOUNT_TOLERANCE) {
+    const matchesPlain = Math.abs(sum - target) <= AMOUNT_TOLERANCE;
+    const matchesWithFee = Math.abs(sum + MERCADOPAGO_RECEIPT_FEE * count - target) <= AMOUNT_TOLERANCE;
+    if (matchesPlain || matchesWithFee) {
       found.push(ids);
       if (found.length > 1) return null; // más de una combinación posible -> ambiguo
     }
@@ -85,8 +101,8 @@ export async function matchPaymentProof(extracted: {
   const relevant = approved.filter((inv) => nameLooksRelated(extracted.beneficiaryName || undefined, inv.vendor.name));
   const pool = relevant.length > 0 ? relevant : approved;
 
-  // Caso simple: una sola factura con el mismo monto.
-  const exact = pool.filter((inv) => Math.abs(Number(inv.total) - extracted.amount!) <= AMOUNT_TOLERANCE);
+  // Caso simple: una sola factura con el mismo monto (o monto - comisión de Mercado Pago).
+  const exact = pool.filter((inv) => amountMatchesSingle(extracted.amount!, Number(inv.total)));
   if (exact.length === 1) {
     return { kind: 'single', invoiceIds: [exact[0].id] };
   }

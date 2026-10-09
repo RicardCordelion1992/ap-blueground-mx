@@ -3,6 +3,10 @@ import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
+// Días hacia adelante que cuentan como "próxima a vencer" en el panel — suficiente para
+// tenerlas en cuenta al armar la corrida de pagos del mes.
+const DUE_SOON_DAYS = 15;
+
 export default async function DashboardPage() {
   const [pendingCount, incompleteVendors, monthTotalAgg, readyVendors, totalVendors] = await Promise.all([
     prisma.invoice.count({ where: { status: 'PENDING' } }),
@@ -22,6 +26,31 @@ export default async function DashboardPage() {
     orderBy: { receivedDate: 'desc' },
     include: { vendor: true, allocations: { include: { building: true } } },
   });
+
+  // Facturas aprobadas, en espera de pago, cuyo vencimiento ya pasó o está a la vuelta de la
+  // esquina — agrupadas por proveedor para poder armar la corrida de pagos del mes de un vistazo
+  // sin tener que ir a revisar "Pagar" factura por factura.
+  const dueSoonHorizon = new Date();
+  dueSoonHorizon.setDate(dueSoonHorizon.getDate() + DUE_SOON_DAYS);
+  const dueSoonInvoices = await prisma.invoice.findMany({
+    where: { status: 'APPROVED', dueDate: { not: null, lte: dueSoonHorizon } },
+    include: { vendor: true },
+    orderBy: { dueDate: 'asc' },
+    take: 100,
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueSoonByVendor = new Map<string, { vendorName: string; invoices: { id: string; total: number; dueDate: Date; daysLeft: number }[] }>();
+  for (const inv of dueSoonInvoices) {
+    const dueDate = inv.dueDate as Date;
+    const daysLeft = Math.round((dueDate.getTime() - today.getTime()) / 86400000);
+    const group = dueSoonByVendor.get(inv.vendorId) || { vendorName: inv.vendor.name, invoices: [] };
+    group.invoices.push({ id: inv.id, total: Number(inv.total), dueDate, daysLeft });
+    dueSoonByVendor.set(inv.vendorId, group);
+  }
+  const dueSoonGroups = [...dueSoonByVendor.values()].sort((a, b) => a.invoices[0].daysLeft - b.invoices[0].daysLeft);
+  const overdueCount = dueSoonInvoices.filter((inv) => (inv.dueDate as Date) < today).length;
 
   const stats = [
     { label: 'Facturas pendientes', value: pendingCount },
@@ -56,6 +85,46 @@ export default async function DashboardPage() {
           </Link>
         </div>
       )}
+
+      <div className="card">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-medium text-sm">Facturas próximas a vencer (por proveedor)</h2>
+          <div className="flex items-center gap-2">
+            {overdueCount > 0 && <span className="badge-incomplete text-xs">{overdueCount} vencida(s)</span>}
+            <Link href="/invoices/pagar" className="btn-secondary text-xs whitespace-nowrap">
+              Ir a Pagar
+            </Link>
+          </div>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {dueSoonGroups.map((g) => (
+            <div key={g.vendorName} className="px-4 py-3 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">{g.vendorName}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {g.invoices.length} factura(s) ·{' '}
+                  {g.invoices
+                    .map(
+                      (inv) =>
+                        `${inv.dueDate.toLocaleDateString('es-MX')} (${
+                          inv.daysLeft < 0 ? `vencida hace ${Math.abs(inv.daysLeft)}d` : inv.daysLeft === 0 ? 'vence hoy' : `en ${inv.daysLeft}d`
+                        })`
+                    )
+                    .join(', ')}
+                </p>
+              </div>
+              <p className="text-sm font-medium whitespace-nowrap">
+                ${g.invoices.reduce((s, inv) => s + inv.total, 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          ))}
+          {dueSoonGroups.length === 0 && (
+            <p className="px-4 py-8 text-center text-gray-400 text-sm">
+              Sin facturas aprobadas por vencer en los próximos {DUE_SOON_DAYS} días.
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="card">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">

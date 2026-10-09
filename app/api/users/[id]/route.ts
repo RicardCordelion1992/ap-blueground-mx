@@ -4,24 +4,9 @@ import { getCurrentUser } from '@/lib/currentUser';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 
-const ROLES = ['ADMIN', 'FINANCE', 'VIEWER'] as const;
+const ROLES = ['ADMIN', 'FINANCE', 'VIEWER', 'CARDHOLDER'] as const;
 type Role = (typeof ROLES)[number];
 
-// Update a user's role, active flag, or password. ADMIN-only for role and
-// active, and an admin can't change their own role/access here — a
-// deliberate guard against locking yourself out (have another admin do it,
-// or edit it directly in Supabase).
-//
-// Password: an admin can set/reset ANYONE's password directly here — no
-// outgoing email required. Each person can also change their own password
-// any time, or use /forgot-password if they forget it and no admin is
-// around.
-//
-// NOTE: authUserId reads/writes below are cast through "as any" — some
-// Vercel builds have shown Prisma's generated types lagging one deploy
-// behind a fresh schema field even though the column itself is live in the
-// database (confirmed via "prisma db push"). The cast only affects
-// compile-time checking, not runtime behavior.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
@@ -89,18 +74,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json(user);
 }
 
-// Permanently delete a user. ADMIN-only, and an admin can't delete
-// themselves (same self-lockout guard as above — have another admin do it).
-//
-// A hard delete is only allowed when the user has NO associated history
-// (no invoices they captured or approved, no uploaded vendor documents, no
-// audit-log activity) — deleting a row that other records point to would
-// either fail at the database level or silently orphan that history. If
-// the person has any history, they can't be deleted: the admin should use
-// "Desactivar" instead, which blocks their access immediately while
-// keeping their history intact. This mirrors how the rest of the app
-// treats historical data (facturas, documentos) as something to preserve,
-// not erase.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {

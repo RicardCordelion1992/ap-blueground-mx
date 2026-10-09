@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { periodLabel } from '@/lib/periodLabel';
 import PagarTable from './PagarTable';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,7 @@ export default async function PaymentsPage() {
     id: inv.id,
     vendorName: inv.vendor.name,
     categoryName: inv.category?.name || null,
+    periodLabel: periodLabel(inv.billingStart, inv.billingEnd),
     buildingLabel:
       inv.allocations.length > 1 ? `${inv.allocations.length} edificios` : inv.allocations[0]?.building.name || '—',
     total: Number(inv.total),

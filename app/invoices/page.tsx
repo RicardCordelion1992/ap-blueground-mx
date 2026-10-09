@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
+import { periodLabel } from '@/lib/periodLabel';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
             <tr>
               <th className="px-4 py-2 font-medium">Proveedor</th>
               <th className="px-4 py-2 font-medium">Categoría</th>
+              <th className="px-4 py-2 font-medium">Periodo</th>
               <th className="px-4 py-2 font-medium">Edificio(s)</th>
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2 font-medium">Recibida</th>
@@ -52,6 +54,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
                   </Link>
                 </td>
                 <td className="px-4 py-2 text-gray-600">{inv.category?.name || '—'}</td>
+                <td className="px-4 py-2 text-gray-600">{periodLabel(inv.billingStart, inv.billingEnd)}</td>
                 <td className="px-4 py-2 text-gray-600">
                   {inv.allocations.length > 1
                     ? `${inv.allocations.length} edificios`
@@ -78,7 +81,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
             ))}
             {invoices.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   Sin facturas.
                 </td>
               </tr>

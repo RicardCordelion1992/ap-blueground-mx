@@ -10,14 +10,23 @@ const LINKS = [
   { href: '/invoices/aprobar', label: 'Aprobar' },
   { href: '/invoices/pagar', label: 'Pagar' },
   { href: '/invoices/comprobantes', label: 'Comprobantes' },
+  { href: '/gastos-tarjeta', label: 'Gastos de tarjeta' },
   { href: '/vendors', label: 'Proveedores' },
   { href: '/buildings', label: 'Edificios' },
   { href: '/reports', label: 'Reportes' },
 ];
 
+// Un CARDHOLDER (tarjetahabiente dado de alta solo para subir sus gastos de tarjeta) no tiene
+// nada que hacer en el resto del menú — su acceso ya está limitado a /gastos-tarjeta desde el
+// layout, así que el menú tampoco le muestra el resto para no confundir.
 export default function Nav({ email, role }: { email: string; role: string }) {
   const pathname = usePathname();
-  const links = role === 'ADMIN' ? [...LINKS, { href: '/usuarios', label: 'Usuarios' }] : LINKS;
+  const links =
+    role === 'CARDHOLDER'
+      ? [{ href: '/gastos-tarjeta', label: 'Gastos de tarjeta' }]
+      : role === 'ADMIN'
+      ? [...LINKS, { href: '/usuarios', label: 'Usuarios' }]
+      : LINKS;
 
   return (
     <header className="bg-brand-700">

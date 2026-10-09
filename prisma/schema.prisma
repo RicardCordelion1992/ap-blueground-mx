@@ -26,19 +26,20 @@ enum UserRole {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique // login identity — any domain is accepted; access is controlled by who an ADMIN creates here (see /usuarios), not by email domain
-  name       String
-  role       UserRole @default(FINANCE)
-  active     Boolean  @default(true) // false = access revoked; row is kept for audit/history
-  authUserId String?  @unique // Supabase Auth user id (set when the login identity is created or first matched) — used to reset this person's password via the admin API
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  email       String   @unique // login identity — any domain is accepted; access is controlled by who an ADMIN creates here (see /usuarios), not by email domain
+  name        String
+  role        UserRole @default(FINANCE)
+  active      Boolean  @default(true) // false = access revoked; row is kept for audit/history
+  authUserId  String?  @unique // Supabase Auth user id (set when the login identity is created or first matched) — used to reset this person's password via the admin API
+  createdAt   DateTime @default(now())
 
-  invoicesCreated   Invoice[]        @relation("InvoiceCreatedBy")
-  invoicesApproved  Invoice[]        @relation("InvoiceApprovedBy")
-  documentsUploaded VendorDocument[]
-  auditLogs         AuditLog[]
-  cardImportBatches CardImportBatch[]
+  invoicesCreated      Invoice[]         @relation("InvoiceCreatedBy")
+  invoicesApproved     Invoice[]         @relation("InvoiceApprovedBy")
+  documentsUploaded    VendorDocument[]
+  auditLogs            AuditLog[]
+  cardImportBatches    CardImportBatch[]
+  paymentProofsUploaded PaymentProof[]
 }
 
 // ---------- Vendors / Landlords ----------
@@ -54,10 +55,10 @@ enum VendorReadiness {
 }
 
 model Vendor {
-  id            String     @id @default(cuid())
+  id            String      @id @default(cuid())
   personType    PersonType
   name          String // razón social (moral) or nombre completo (física)
-  rfc           String?    @unique // nullable: a vendor can be created as a draft before its RFC is confirmed — it stays INCOMPLETE/not payable until filled in
+  rfc           String?     @unique // nullable: a vendor can be created as a draft before its RFC is confirmed — it stays INCOMPLETE/not payable until filled in
   curp          String? // física only
   legalRepName  String? // moral only — representante legal
   legalRepRfc   String? // moral only
@@ -66,23 +67,23 @@ model Vendor {
   taxRegime     String? // régimen fiscal
   cfdiUse       String? // uso de CFDI
 
-  email         String?
-  phone         String?
-  contactName   String? // persona de contacto para facturación/cobranza (distinta del representante legal)
+  email       String?
+  phone       String?
+  contactName String? // persona de contacto para facturación/cobranza (distinta del representante legal)
 
   // Banking
-  bankName       String?
-  clabe          String?
-  accountNumber  String?
-  swiftCode      String? // solo aplica a transferencias internacionales
-  currency       String  @default("MXN")
-  paymentTerms   String? // e.g. "Neto 30"
-  paymentDueDay  Int? // día del mes en que normalmente se paga (1-31)
+  bankName      String?
+  clabe         String?
+  accountNumber String?
+  swiftCode     String? // solo aplica a transferencias internacionales
+  currency      String  @default("MXN")
+  paymentTerms  String? // e.g. "Neto 30"
+  paymentDueDay Int? // día del mes en que normalmente se paga (1-31)
 
   defaultCategoryId String?
   defaultCategory    ExpenseCategory? @relation(fields: [defaultCategoryId], references: [id])
 
-  status    String @default("active") // active | inactive
+  status String @default("active") // active | inactive
   // Computed at read time from documents+fields, but cached here for fast filtering/reporting.
   readiness VendorReadiness @default(INCOMPLETE)
   // ADMIN-only manual Ready: when true, this vendor is always "Ready" regardless
@@ -120,7 +121,7 @@ model VendorDocument {
   expiresDate DateTime? // null = does not expire (e.g. acta constitutiva)
 
   uploadedById String?
-  uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User?     @relation(fields: [uploadedById], references: [id])
   uploadedAt   DateTime?
 
   notes String?
@@ -242,7 +243,7 @@ model Invoice {
   // Payment-readiness gate: even an approved invoice cannot move to PAID (or appear on a
   // bank export batch) while the vendor's readiness is INCOMPLETE. Enforced in the app layer
   // and mirrored here for reporting.
-  payable  Boolean @default(false)
+  payable Boolean @default(false)
 
   fileUrl      String? // the actual invoice PDF/image, in Supabase Storage
   fileName     String?
@@ -255,8 +256,9 @@ model Invoice {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  allocations InvoiceAllocation[]
-  cardCharge  CardCharge? // el cargo de tarjeta que se vinculó a esta factura (si se pagó con tarjeta), si lo hay
+  allocations        InvoiceAllocation[]
+  cardCharge         CardCharge? // el cargo de tarjeta que se vinculó a esta factura (si se pagó con tarjeta), si lo hay
+  paymentAllocations PaymentProofAllocation[] // comprobante(s) de pago vinculados a esta factura
 
   @@index([status])
   @@index([receivedDate])
@@ -266,7 +268,7 @@ model Invoice {
 // unitId is optional: an allocation can target a whole building (common-area utility) or one
 // specific unit/depa within it (e.g. a unit's own electricity meter).
 model InvoiceAllocation {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   invoiceId String
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -335,13 +337,13 @@ enum CardChargeStatus {
 }
 
 model CardImportBatch {
-  id         String   @id @default(cuid())
-  fileName   String?
-  cardHolder String? // a quién pertenece la tarjeta de este estado de cuenta, tal como se indicó al subir el CSV
-  cardLast4  String?
+  id           String   @id @default(cuid())
+  fileName     String?
+  cardHolder   String? // a quién pertenece la tarjeta de este estado de cuenta, tal como se indicó al subir el CSV
+  cardLast4    String?
   importedById String?
-  importedBy   User?  @relation(fields: [importedById], references: [id])
-  createdAt  DateTime @default(now())
+  importedBy   User?    @relation(fields: [importedById], references: [id])
+  createdAt    DateTime @default(now())
 
   charges CardCharge[]
 }
@@ -365,7 +367,7 @@ model CardCharge {
 
   // Caso "no hay factura" — se clasifica directo.
   buildingId String?
-  building   Building? @relation(fields: [buildingId], references: [id])
+  building   Building?        @relation(fields: [buildingId], references: [id])
   categoryId String?
   category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
 
@@ -374,6 +376,66 @@ model CardCharge {
 
   @@index([status])
   @@index([buildingId])
+}
+
+// ---------- Payment proofs (comprobantes de pago) ----------
+
+// Un comprobante de pago (transferencia bancaria, recibo, etc.) que se sube — normalmente en
+// lote, varios a la vez — después de hacer los pagos. El objetivo: que la IA lea cada PDF,
+// identifique a qué factura(s) corresponde por monto/proveedor, y las marque como pagadas sin
+// tener que hacerlo factura por factura. Un comprobante puede cubrir 1 o varias facturas
+// (ej. una sola transferencia que paga 3 facturas de CFE de distintos edificios en un solo pago).
+// Cuando hay duda (monto no coincide con ninguna combinación clara, o hay varias facturas
+// candidatas igual de probables), se deja en NEEDS_REVIEW para asignar a mano — nunca se marca
+// una factura como pagada "a ciegas".
+enum PaymentProofStatus {
+  PENDING_REVIEW // subido, aún procesando (estado transitorio)
+  AUTO_MATCHED   // la IA lo relacionó sola con 1+ facturas y ya las marcó pagadas
+  NEEDS_REVIEW   // hubo duda — requiere asignación manual
+  CONFIRMED      // se asignó/confirmó a mano y ya se marcaron las facturas como pagadas
+}
+
+model PaymentProof {
+  id       String  @id @default(cuid())
+  fileUrl  String // Supabase Storage path (mismo bucket que Invoice.fileUrl)
+  fileName String?
+
+  uploadedById String?
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id])
+
+  // Datos que la IA extrae del comprobante (transferencia, recibo bancario, etc.)
+  extractedAmount      Decimal?  @db.Decimal(14, 2)
+  extractedDate        DateTime?
+  extractedReference   String? // folio/referencia del banco
+  extractedBeneficiary String? // nombre del beneficiario tal como aparece en el comprobante
+  extractedFields      String? // JSON crudo de todo lo que devolvió la extracción, por si se necesita después
+
+  status PaymentProofStatus @default(PENDING_REVIEW)
+
+  createdAt DateTime @default(now())
+
+  allocations PaymentProofAllocation[]
+
+  @@index([status])
+}
+
+// Relación comprobante <-> factura (muchos a muchos vía esta tabla intermedia). amount es
+// cuánto de ESTE comprobante corresponde a ESTA factura — en la práctica, normalmente el total
+// completo de la factura.
+model PaymentProofAllocation {
+  id String @id @default(cuid())
+
+  paymentProofId String
+  paymentProof   PaymentProof @relation(fields: [paymentProofId], references: [id], onDelete: Cascade)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  amount    Decimal  @db.Decimal(14, 2)
+  matchedBy String   @default("auto") // "auto" | "manual"
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
 }
 
 // ---------- Audit trail (who changed what — important once this holds banking/AML data) ----------

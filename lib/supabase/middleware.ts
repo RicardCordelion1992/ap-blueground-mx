@@ -10,8 +10,15 @@ import { NextResponse, type NextRequest } from 'next/server';
 // page. Who is allowed to have an account at all is controlled separately,
 // by which users an ADMIN has pre-provisioned from /usuarios (see
 // lib/currentUser.ts) — not by email domain.
+//
+// Also forwards the request's pathname as a response header (x-pathname).
+// This runs on the Edge runtime, where Prisma isn't available, so it can't
+// check the user's role itself — app/layout.tsx reads this header (Node
+// runtime, Prisma available there) to redirect a CARDHOLDER user away from
+// every page except /gastos-tarjeta.
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
+  response.headers.set('x-pathname', request.nextUrl.pathname);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

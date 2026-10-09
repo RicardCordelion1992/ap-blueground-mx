@@ -9,7 +9,6 @@ type Row = {
   id: string;
   vendorName: string;
   categoryName: string | null;
-  periodLabel: string;
   buildingLabel: string;
   total: number;
   receivedDate: string;
@@ -87,7 +86,6 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
               </th>
               <th className="px-4 py-2 font-medium">Proveedor</th>
               <th className="px-4 py-2 font-medium">Categoría</th>
-              <th className="px-4 py-2 font-medium">Periodo</th>
               <th className="px-4 py-2 font-medium">Edificio(s)</th>
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2 font-medium">Recibida</th>
@@ -108,7 +106,6 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
                   </Link>
                 </td>
                 <td className="px-4 py-2 text-gray-600">{inv.categoryName || '—'}</td>
-                <td className="px-4 py-2 text-gray-600">{inv.periodLabel}</td>
                 <td className="px-4 py-2 text-gray-600">{inv.buildingLabel}</td>
                 <td className="px-4 py-2">{fmt(inv.total)}</td>
                 <td className="px-4 py-2 text-gray-500">{new Date(inv.receivedDate).toLocaleDateString('es-MX')}</td>
@@ -119,7 +116,7 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
             ))}
             {invoices.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   No hay facturas pendientes de aprobación.
                 </td>
               </tr>

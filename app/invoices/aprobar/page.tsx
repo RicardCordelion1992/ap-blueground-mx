@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/currentUser';
-import { periodLabel } from '@/lib/periodLabel';
 import AprobarTable from './AprobarTable';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +19,6 @@ export default async function ApprovalsPage() {
     id: inv.id,
     vendorName: inv.vendor.name,
     categoryName: inv.category?.name || null,
-    periodLabel: periodLabel(inv.billingStart, inv.billingEnd),
     buildingLabel:
       inv.allocations.length > 1 ? `${inv.allocations.length} edificios` : inv.allocations[0]?.building.name || '—',
     total: Number(inv.total),

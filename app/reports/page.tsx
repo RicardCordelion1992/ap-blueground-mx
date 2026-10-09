@@ -3,151 +3,220 @@ import { prisma } from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 export default async function ReportsPage({ searchParams }: { searchParams: { from?: string; to?: string } }) {
-const from = searchParams.from ? new Date(searchParams.from) : undefined;
-const to = searchParams.to ? new Date(searchParams.to) : undefined;
+  const from = searchParams.from ? new Date(searchParams.from) : undefined;
+  const to = searchParams.to ? new Date(searchParams.to) : undefined;
 
-const allocations = await prisma.invoiceAllocation.findMany({
-where: { invoice: { receivedDate: { gte: from, lte: to } } },
-include: { building: true, unit: true },
-});
+  const allocations = await prisma.invoiceAllocation.findMany({
+    where: { invoice: { receivedDate: { gte: from, lte: to } } },
+    include: { building: true, unit: true },
+  });
 
-const total = allocations.reduce((s, a) => s + Number(a.amount), 0);
+  const total = allocations.reduce((s, a) => s + Number(a.amount), 0);
 
-const byBuilding = new Map<string, { name: string; amount: number }>();
-const byUnit = new Map<string, { buildingName: string; unitNumber: string; poCode: string | null; amount: number }>();
+  const byBuilding = new Map<string, { name: string; amount: number }>();
+  const byUnit = new Map<string, { buildingName: string; unitNumber: string; poCode: string | null; amount: number }>();
 
-for (const a of allocations) {
-const amt = Number(a.amount);
-const b = byBuilding.get(a.buildingId) || { name: a.building.name, amount: 0 };
-b.amount += amt;
-byBuilding.set(a.buildingId, b);
+  for (const a of allocations) {
+    const amt = Number(a.amount);
+    const b = byBuilding.get(a.buildingId) || { name: a.building.name, amount: 0 };
+    b.amount += amt;
+    byBuilding.set(a.buildingId, b);
 
-if (a.unitId && a.unit) {
-const u = byUnit.get(a.unitId) || { buildingName: a.building.name, unitNumber: a.unit.unitNumber, poCode: a.unit.poCode, amount: 0 };
-u.amount += amt;
-byUnit.set(a.unitId, u);
-}
-}
+    if (a.unitId && a.unit) {
+      const u = byUnit.get(a.unitId) || { buildingName: a.building.name, unitNumber: a.unit.unitNumber, poCode: a.unit.poCode, amount: 0 };
+      u.amount += amt;
+      byUnit.set(a.unitId, u);
+    }
+  }
 
-const buildingRows = [...byBuilding.values()].sort((a, b) => b.amount - a.amount);
-const unitRows = [...byUnit.values()].sort((a, b) => b.amount - a.amount);
+  const buildingRows = [...byBuilding.values()].sort((a, b) => b.amount - a.amount);
+  const unitRows = [...byUnit.values()].sort((a, b) => b.amount - a.amount);
 
-const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-const pct = (n: number) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '—');
+  // Puntualidad de pago: para cada factura ya pagada, cuántos días pasaron entre el fin de su
+  // periodo de facturación y la fecha real en que se pagó. Usa el mismo rango de fechas del
+  // filtro de arriba, pero sobre la fecha de pago (no la de recepción), porque lo que importa
+  // aquí es "qué se pagó en este rango", no "qué se recibió en este rango".
+  const paidInvoices = await prisma.invoice.findMany({
+    where: { status: 'PAID', paidDate: { gte: from, lte: to } },
+    include: { vendor: true },
+    orderBy: { paidDate: 'desc' },
+    take: 300,
+  });
 
-// Enlaces de descarga — la de facturas respeta el mismo rango de fechas filtrado arriba,
-// para poder exportar exactamente lo que se está viendo en pantalla.
-const invoicesExportParams = new URLSearchParams();
-if (searchParams.from) invoicesExportParams.set('from', searchParams.from);
-if (searchParams.to) invoicesExportParams.set('to', searchParams.to);
-const invoicesExportQs = invoicesExportParams.toString();
-const invoicesExportHref = `/api/exports/invoices${invoicesExportQs ? `?${invoicesExportQs}` : ''}`;
-const hasDateFilter = Boolean(searchParams.from || searchParams.to);
+  const paymentRows = paidInvoices.map((inv) => {
+    const periodEnd = inv.billingEnd || inv.billingStart || inv.issueDate || null;
+    const diffDays =
+      periodEnd && inv.paidDate ? Math.round((inv.paidDate.getTime() - periodEnd.getTime()) / 86400000) : null;
+    return {
+      id: inv.id,
+      vendorName: inv.vendor.name,
+      periodLabel:
+        inv.billingStart && inv.billingEnd
+          ? `${inv.billingStart.toLocaleDateString('es-MX')} – ${inv.billingEnd.toLocaleDateString('es-MX')}`
+          : '—',
+      paidDate: inv.paidDate ? inv.paidDate.toLocaleDateString('es-MX') : '—',
+      diffDays,
+    };
+  });
+  const diffValues = paymentRows.map((r) => r.diffDays).filter((d): d is number => d !== null);
+  const avgDiff = diffValues.length > 0 ? Math.round(diffValues.reduce((s, d) => s + d, 0) / diffValues.length) : null;
 
-return (
-<div className="space-y-8">
-<div>
-<h1 className="text-xl font-semibold">Reportes</h1>
-<p className="text-sm text-gray-500">Fragmentación por edificio y por unidad — % calculado en vivo, nunca almacenado</p>
-</div>
+  const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+  const pct = (n: number) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '—');
 
-<form className="flex gap-2 items-end" method="get">
-<div>
-<label className="label">Desde</label>
-<input type="date" name="from" defaultValue={searchParams.from} className="input" />
-</div>
-<div>
-<label className="label">Hasta</label>
-<input type="date" name="to" defaultValue={searchParams.to} className="input" />
-</div>
-<button className="btn-secondary">Filtrar</button>
-</form>
+  // Enlaces de descarga — la de facturas respeta el mismo rango de fechas filtrado arriba,
+  // para poder exportar exactamente lo que se está viendo en pantalla.
+  const invoicesExportParams = new URLSearchParams();
+  if (searchParams.from) invoicesExportParams.set('from', searchParams.from);
+  if (searchParams.to) invoicesExportParams.set('to', searchParams.to);
+  const invoicesExportQs = invoicesExportParams.toString();
+  const invoicesExportHref = `/api/exports/invoices${invoicesExportQs ? `?${invoicesExportQs}` : ''}`;
+  const hasDateFilter = Boolean(searchParams.from || searchParams.to);
 
-<div className="card p-4 space-y-2">
-<p className="text-sm font-medium text-gray-700">Descargar datos (CSV, para abrir en Excel)</p>
-<div className="flex flex-wrap gap-2">
-<a href="/api/exports/vendors" className="btn-secondary text-sm">
-Proveedores / Landlords
-</a>
-<a href={invoicesExportHref} className="btn-secondary text-sm">
-Facturas{hasDateFilter ? ' (rango filtrado)' : ''}
-</a>
-<a href="/api/exports/buildings" className="btn-secondary text-sm">
-Edificios y unidades
-</a>
-</div>
-</div>
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-xl font-semibold">Reportes</h1>
+        <p className="text-sm text-gray-500">Fragmentación por edificio y por unidad — % calculado en vivo, nunca almacenado</p>
+      </div>
 
-<div className="card p-4">
-<p className="text-sm text-gray-500">Total asignado</p>
-<p className="text-2xl font-semibold">{fmt(total)}</p>
-</div>
+      <form className="flex gap-2 items-end" method="get">
+        <div>
+          <label className="label">Desde</label>
+          <input type="date" name="from" defaultValue={searchParams.from} className="input" />
+        </div>
+        <div>
+          <label className="label">Hasta</label>
+          <input type="date" name="to" defaultValue={searchParams.to} className="input" />
+        </div>
+        <button className="btn-secondary">Filtrar</button>
+      </form>
 
-<div className="card">
-<div className="px-4 py-3 border-b border-gray-100">
-<h2 className="font-medium text-sm">Por edificio</h2>
-</div>
-<table className="w-full text-sm">
-<thead className="text-left text-gray-500 border-b border-gray-100">
-<tr>
-<th className="px-4 py-2 font-medium">Edificio</th>
-<th className="px-4 py-2 font-medium">Monto</th>
-<th className="px-4 py-2 font-medium">%</th>
-</tr>
-</thead>
-<tbody>
-{buildingRows.map((b) => (
-<tr key={b.name} className="border-b border-gray-50 last:border-0">
-<td className="px-4 py-2">{b.name}</td>
-<td className="px-4 py-2">{fmt(b.amount)}</td>
-<td className="px-4 py-2 text-gray-600">{pct(b.amount)}</td>
-</tr>
-))}
-{buildingRows.length === 0 && (
-<tr>
-<td colSpan={3} className="px-4 py-6 text-center text-gray-400">
-Sin datos en el rango seleccionado.
-</td>
-</tr>
-)}
-</tbody>
-</table>
-</div>
+      <div className="card p-4 space-y-2">
+        <p className="text-sm font-medium text-gray-700">Descargar datos (CSV, para abrir en Excel)</p>
+        <div className="flex flex-wrap gap-2">
+          <a href="/api/exports/vendors" className="btn-secondary text-sm">
+            Proveedores / Landlords
+          </a>
+          <a href={invoicesExportHref} className="btn-secondary text-sm">
+            Facturas{hasDateFilter ? ' (rango filtrado)' : ''}
+          </a>
+          <a href="/api/exports/buildings" className="btn-secondary text-sm">
+            Edificios y unidades
+          </a>
+        </div>
+      </div>
 
-<div className="card">
-<div className="px-4 py-3 border-b border-gray-100">
-<h2 className="font-medium text-sm">Por unidad (depa / PO)</h2>
-</div>
-<table className="w-full text-sm">
-<thead className="text-left text-gray-500 border-b border-gray-100">
-<tr>
-<th className="px-4 py-2 font-medium">Edificio</th>
-<th className="px-4 py-2 font-medium">Depa</th>
-<th className="px-4 py-2 font-medium">PO</th>
-<th className="px-4 py-2 font-medium">Monto</th>
-<th className="px-4 py-2 font-medium">%</th>
-</tr>
-</thead>
-<tbody>
-{unitRows.map((u, i) => (
-<tr key={i} className="border-b border-gray-50 last:border-0">
-<td className="px-4 py-2">{u.buildingName}</td>
-<td className="px-4 py-2">{u.unitNumber}</td>
-<td className="px-4 py-2 text-gray-600">{u.poCode || '—'}</td>
-<td className="px-4 py-2">{fmt(u.amount)}</td>
-<td className="px-4 py-2 text-gray-600">{pct(u.amount)}</td>
-</tr>
-))}
-{unitRows.length === 0 && (
-<tr>
-<td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-Sin facturas asignadas a una unidad específica todavía.
-</td>
-</tr>
-)}
-</tbody>
-</table>
-</div>
-</div>
-);
+      <div className="card p-4">
+        <p className="text-sm text-gray-500">Total asignado</p>
+        <p className="text-2xl font-semibold">{fmt(total)}</p>
+      </div>
+
+      <div className="card">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="font-medium text-sm">Por edificio</h2>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="text-left text-gray-500 border-b border-gray-100">
+            <tr>
+              <th className="px-4 py-2 font-medium">Edificio</th>
+              <th className="px-4 py-2 font-medium">Monto</th>
+              <th className="px-4 py-2 font-medium">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buildingRows.map((b) => (
+              <tr key={b.name} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2">{b.name}</td>
+                <td className="px-4 py-2">{fmt(b.amount)}</td>
+                <td className="px-4 py-2 text-gray-600">{pct(b.amount)}</td>
+              </tr>
+            ))}
+            {buildingRows.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                  Sin datos en el rango seleccionado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="font-medium text-sm">Por unidad (depa / PO)</h2>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="text-left text-gray-500 border-b border-gray-100">
+            <tr>
+              <th className="px-4 py-2 font-medium">Edificio</th>
+              <th className="px-4 py-2 font-medium">Depa</th>
+              <th className="px-4 py-2 font-medium">PO</th>
+              <th className="px-4 py-2 font-medium">Monto</th>
+              <th className="px-4 py-2 font-medium">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unitRows.map((u, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2">{u.buildingName}</td>
+                <td className="px-4 py-2">{u.unitNumber}</td>
+                <td className="px-4 py-2 text-gray-600">{u.poCode || '—'}</td>
+                <td className="px-4 py-2">{fmt(u.amount)}</td>
+                <td className="px-4 py-2 text-gray-600">{pct(u.amount)}</td>
+              </tr>
+            ))}
+            {unitRows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                  Sin facturas asignadas a una unidad específica todavía.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-medium text-sm">Puntualidad de pago</h2>
+          {avgDiff !== null && (
+            <span className="text-xs text-gray-500">
+              Promedio: {avgDiff >= 0 ? `${avgDiff} días después` : `${Math.abs(avgDiff)} días antes`} de que terminó el periodo de la factura
+            </span>
+          )}
+        </div>
+        <table className="w-full text-sm">
+          <thead className="text-left text-gray-500 border-b border-gray-100">
+            <tr>
+              <th className="px-4 py-2 font-medium">Proveedor</th>
+              <th className="px-4 py-2 font-medium">Periodo de la factura</th>
+              <th className="px-4 py-2 font-medium">Fecha de pago</th>
+              <th className="px-4 py-2 font-medium">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paymentRows.map((r) => (
+              <tr key={r.id} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2">{r.vendorName}</td>
+                <td className="px-4 py-2 text-gray-600">{r.periodLabel}</td>
+                <td className="px-4 py-2 text-gray-600">{r.paidDate}</td>
+                <td className="px-4 py-2 text-gray-600">
+                  {r.diffDays === null ? '—' : r.diffDays >= 0 ? `${r.diffDays} días después` : `${Math.abs(r.diffDays)} días antes`}
+                </td>
+              </tr>
+            ))}
+            {paymentRows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
+                  Sin facturas pagadas en el rango seleccionado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type Role = 'ADMIN' | 'FINANCE' | 'VIEWER';
+type Role = 'ADMIN' | 'FINANCE' | 'VIEWER' | 'CARDHOLDER';
 
 type UserRow = {
   id: string;
@@ -18,6 +18,7 @@ const ROLE_LABEL: Record<Role, string> = {
   ADMIN: 'Administrador',
   FINANCE: 'Finanzas',
   VIEWER: 'Solo lectura',
+  CARDHOLDER: 'Tarjetahabiente (solo gastos de tarjeta)',
 };
 
 function generatePassword() {
@@ -302,7 +303,8 @@ export default function UsersClient({
         o recuperarla ella misma si la olvida. Desactivar a alguien bloquea su entrada de inmediato
         conservando su historial (facturas, documentos). Eliminar borra al usuario por completo y solo es
         posible si no tiene historial asociado (facturas, documentos o actividad registrada) — si lo tiene,
-        usa Desactivar en su lugar.
+        usa Desactivar en su lugar. Un "Tarjetahabiente" solo puede entrar a Gastos de tarjeta a subir sus
+        comprobantes y clasificarlos por edificio — no ve nada más de la plataforma.
       </p>
     </div>
   );

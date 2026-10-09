@@ -20,9 +20,11 @@ datasource db {
 // ---------- Auth / users ----------
 
 enum UserRole {
-  ADMIN   // full access, can approve vendors and mark AML review complete
-  FINANCE // day-to-day: capture invoices, manage vendors, run reports
-  VIEWER  // read-only, e.g. auditors
+  ADMIN      // full access, can approve vendors and mark AML review complete
+  FINANCE    // day-to-day: capture invoices, manage vendors, run reports
+  VIEWER     // read-only, e.g. auditors
+  CARDHOLDER // tarjetahabiente (Brex/Jeeves): solo entra a /gastos-tarjeta a subir su(s)
+             // comprobante(s) de gasto y clasificarlos por edificio — sin acceso a nada más
 }
 
 model User {
@@ -40,6 +42,7 @@ model User {
   auditLogs            AuditLog[]
   cardImportBatches    CardImportBatch[]
   paymentProofsUploaded PaymentProof[]
+  cardExpenseReceipts  CardExpenseReceipt[]
 }
 
 // ---------- Vendors / Landlords ----------
@@ -165,6 +168,7 @@ model Building {
   units              Unit[]
   invoiceAllocations InvoiceAllocation[] // allocations at the building level (no specific unit)
   cardCharges        CardCharge[]
+  cardExpenseReceipts CardExpenseReceipt[]
 
   createdAt DateTime @default(now())
 }
@@ -192,6 +196,7 @@ model ExpenseCategory {
   vendors     Vendor[]
   invoices    Invoice[]
   cardCharges CardCharge[]
+  cardExpenseReceipts CardExpenseReceipt[]
 }
 
 // ---------- Invoices ----------
@@ -375,6 +380,49 @@ model CardCharge {
   createdAt DateTime @default(now())
 
   @@index([status])
+  @@index([buildingId])
+}
+
+// ---------- Gastos de tarjeta por tarjetahabiente (Brex / Jeeves) ----------
+
+// Cada persona que trae una tarjeta corporativa (Brex, o Jeeves solo para utilities) sube aquí
+// su propio comprobante/factura del gasto en el que incurrió y lo clasifica por edificio. Esto
+// es INDEPENDIENTE de CardCharge/CardImportBatch (el estado de cuenta completo del banco, que
+// se importará más adelante como un Excel de Brex/Jeeves): ese estado de cuenta es la fuente de
+// verdad de lo que cobró el banco; esto es el respaldo/factura de cada cargo, subido por quien
+// lo hizo. Cuando se construya la conciliación del estado de cuenta, cada línea del banco podrá
+// cruzarse contra estos recibos por monto/fecha/tarjetahabiente — por eso no se vinculan todavía
+// a un CardCharge con una relación dura.
+enum CardProvider {
+  BREX
+  JEEVES
+}
+
+model CardExpenseReceipt {
+  id           String       @id @default(cuid())
+  uploadedById String
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  provider     CardProvider
+
+  fileUrl  String // Supabase Storage path (mismo bucket que Invoice.fileUrl)
+  fileName String?
+
+  // Datos que la IA extrae del comprobante al subirlo (igual que en PaymentProof) — el
+  // tarjetahabiente solo tiene que confirmar/corregir y elegir el edificio.
+  amount          Decimal?  @db.Decimal(14, 2)
+  expenseDate     DateTime?
+  description     String? // comercio/concepto, tal como aparece en el comprobante
+  extractedFields String? // JSON crudo de la extracción, por si se necesita después
+
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id])
+
+  categoryId String?
+  category   ExpenseCategory? @relation(fields: [categoryId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([uploadedById])
   @@index([buildingId])
 }
 

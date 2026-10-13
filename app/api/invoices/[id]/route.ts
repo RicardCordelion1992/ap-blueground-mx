@@ -100,8 +100,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined,
       issueDate: body.issueDate ? new Date(body.issueDate) : null,
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
-      billingStart: body.billingStart ? new Date(body.billingStart) : null, // NUEVO
-      billingEnd: body.billingEnd ? new Date(body.billingEnd) : null, // NUEVO
+      billingStart: body.billingStart ? new Date(body.billingStart) : null,
+      billingEnd: body.billingEnd ? new Date(body.billingEnd) : null,
       subtotal: body.subtotal ? parseFloat(body.subtotal) : null,
       taxAmount: body.taxAmount ? parseFloat(body.taxAmount) : null,
       total: body.total != null ? parseFloat(body.total) : undefined,

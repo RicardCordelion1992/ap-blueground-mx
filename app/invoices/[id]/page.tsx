@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import MarkPaidButton from './MarkPaidButton';
 import ResubmitButton from './ResubmitButton';
 import ApprovalButtons from '../ApprovalButtons';
+import DeleteInvoiceButton from './DeleteInvoiceButton';
 import { INVOICES_BUCKET, signDocUrl } from '@/lib/signedUrl';
 import { getCurrentUser } from '@/lib/currentUser';
 
@@ -48,6 +49,15 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
             )}
           </div>
         </div>
+
+        {canApprove && (
+          <div className="flex items-center gap-2">
+            <a href={`/invoices/${invoice.id}/edit`} className="btn-secondary text-sm">
+              Editar
+            </a>
+            <DeleteInvoiceButton invoiceId={invoice.id} />
+          </div>
+        )}
 
         {invoice.status === 'PENDING' && <ApprovalButtons invoiceId={invoice.id} canApprove={canApprove} />}
         {invoice.status === 'APPROVED' && <MarkPaidButton invoiceId={invoice.id} disabled={!invoice.payable} />}

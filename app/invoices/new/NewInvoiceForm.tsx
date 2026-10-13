@@ -35,7 +35,7 @@ type InitialInbound = {
 } | null;
 
 export default function NewInvoiceForm({
-  vendors,
+  vendors: initialVendors,
   buildings: initialBuildings,
   categories,
   initialInbound,
@@ -47,6 +47,7 @@ export default function NewInvoiceForm({
 }) {
   const router = useRouter();
   const [buildings, setBuildings] = useState(initialBuildings);
+  const [vendors, setVendors] = useState(initialVendors);
   const [vendorId, setVendorId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -70,6 +71,7 @@ export default function NewInvoiceForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [newBuildingName, setNewBuildingName] = useState('');
+  const [newVendorName, setNewVendorName] = useState('');
 
   // Si esta factura viene de la Bandeja de correo (/invoices/bandeja), este id
   // viaja en el POST a /api/invoices para que el servidor marque ese correo
@@ -268,6 +270,24 @@ export default function NewInvoiceForm({
     }
   }
 
+    async function addVendorInline() {
+    if (!newVendorName.trim()) return;
+    const res = await fetch('/api/vendors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newVendorName.trim() }),
+    });
+    if (res.ok) {
+      const v = await res.json();
+      setVendors((prev) => [...prev, v].sort((a, b) => a.name.localeCompare(b.name)));
+      setVendorId(v.id);
+      setNewVendorName('');
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setError(typeof body.error === 'string' ? body.error : 'No se pudo crear el proveedor.');
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -391,7 +411,7 @@ export default function NewInvoiceForm({
         </div>
 
         <div className="card p-6 space-y-4">
-          <div>
+                   <div>
             <label className="label">Proveedor *</label>
             <select required className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">Selecciona…</option>
@@ -406,6 +426,20 @@ export default function NewInvoiceForm({
                 Este proveedor no está "Ready" — la factura se guardará como <strong>no pagable</strong> hasta completar su expediente.
               </p>
             )}
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                className="input flex-1"
+                placeholder="¿No está el proveedor? Agrégalo aquí sin salir del formulario"
+                value={newVendorName}
+                onChange={(e) => setNewVendorName(e.target.value)}
+              />
+              <button type="button" className="btn-secondary whitespace-nowrap" onClick={addVendorInline}>
+                + Nuevo proveedor
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Se crea como proveedor nuevo (expediente incompleto) — luego puedes completar su RFC y documentos desde Proveedores.
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4">

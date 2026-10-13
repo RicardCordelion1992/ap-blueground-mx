@@ -108,12 +108,30 @@ async function main() {
     });
   }
 
-  for (const [i, name] of CATEGORIES.entries()) {
-    await prisma.expenseCategory.upsert({
-      where: { name },
-      update: {},
-      create: { name, sortOrder: i },
-    });
+    const OLD_GENERIC_CATEGORIES = [
+    'Renta',
+    'Mantenimiento',
+    'Limpieza',
+    'Servicios (luz, agua, gas)',
+    'Internet / telecom',
+    'Seguridad',
+    'Amenidades',
+    'Administración / HOA',
+    'Reparaciones',
+    'Mobiliario',
+    'Otros',
+  ];
+
+  for (const name of OLD_GENERIC_CATEGORIES) {
+    const cat = await prisma.expenseCategory.findUnique({ where: { name } });
+    if (!cat) continue;
+    const inUse = await prisma.invoice.count({ where: { categoryId: cat.id } });
+    if (inUse === 0) {
+      await prisma.expenseCategory.delete({ where: { id: cat.id } });
+      console.log(`Categoría eliminada (no usada): ${name}`);
+    } else {
+      console.log(`Categoría "${name}" no se borró porque tiene ${inUse} factura(s) usándola.`);
+    }
   }
 
   for (const dt of DOCUMENT_TYPE_SEED) {

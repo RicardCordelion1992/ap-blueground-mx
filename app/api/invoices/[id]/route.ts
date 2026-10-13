@@ -78,15 +78,68 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
+  // Edición completa de la factura (proveedor, montos, fechas, asignaciones) —
+  // solo un ADMIN puede editarla, y en cualquier estatus.
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Solo un administrador puede editar facturas.' }, { status: 403 });
+  }
+
+  const current = await prisma.invoice.findUnique({ where: { id: params.id } });
+  if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+
+  if (!body.vendorId) {
+    return NextResponse.json({ error: 'Selecciona un proveedor.' }, { status: 400 });
+  }
+
+  const allocations = Array.isArray(body.allocations)
+    ? body.allocations
+        .filter((a: any) => a.buildingId && a.amount)
+        .map((a: any) => ({ buildingId: a.buildingId, unitId: a.unitId || null, amount: parseFloat(a.amount) }))
+    : null;
+
   const invoice = await prisma.invoice.update({
     where: { id: params.id },
     data: {
-      invoiceNumber: body.invoiceNumber,
+      vendorId: body.vendorId,
+      invoiceNumber: body.invoiceNumber || null,
       categoryId: body.categoryId || null,
-      notes: body.notes,
-      dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+      receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined,
+      issueDate: body.issueDate ? new Date(body.issueDate) : null,
+      dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      subtotal: body.subtotal ? parseFloat(body.subtotal) : null,
+      taxAmount: body.taxAmount ? parseFloat(body.taxAmount) : null,
+      total: body.total != null ? parseFloat(body.total) : undefined,
+      notes: body.notes || null,
+      ...(allocations ? { allocations: { deleteMany: {}, create: allocations } } : {}),
     },
   });
   await logAudit(user.id, 'update', 'Invoice', invoice.id);
   return NextResponse.json(invoice);
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Solo un administrador puede eliminar facturas.' }, { status: 403 });
+  }
+
+  const current = await prisma.invoice.findUnique({ where: { id: params.id } });
+  if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+
+  try {
+    await prisma.invoice.update({
+      where: { id: params.id },
+      data: { allocations: { deleteMany: {} } },
+    });
+    await prisma.invoice.delete({ where: { id: params.id } });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: 'No se pudo eliminar la factura — puede que otro registro (como un correo vinculado) todavía la referencie.' },
+      { status: 409 }
+    );
+  }
+
+  await logAudit(user.id, 'delete', 'Invoice', params.id);
+  return NextResponse.json({ ok: true });
 }

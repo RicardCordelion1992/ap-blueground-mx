@@ -6,85 +6,88 @@ import { recomputeVendorReadiness } from '@/lib/readiness';
 import { logAudit } from '@/lib/audit';
 
 const VendorInput = z.object({
-personType: z.enum(['FISICA', 'MORAL']),
-name: z.string().min(1),
-// RFC es muy recomendado (lo necesitas para pasar a "Ready") pero ya no es obligatorio al
-// crear: permite dar de alta un proveedor en borrador mientras confirmas su RFC.
-rfc: z.string().optional().nullable(),
-curp: z.string().optional().nullable(),
-legalRepName: z.string().optional().nullable(),
-legalRepRfc: z.string().optional().nullable(),
-fiscalAddress: z.string().optional().nullable(),
-taxRegime: z.string().optional().nullable(),
-cfdiUse: z.string().optional().nullable(),
-email: z.string().email().optional().nullable().or(z.literal('')),
-phone: z.string().optional().nullable(),
-contactName: z.string().optional().nullable(),
-bankName: z.string().optional().nullable(),
-clabe: z.string().optional().nullable(),
-accountNumber: z.string().optional().nullable(),
-swiftCode: z.string().optional().nullable(),
-currency: z.string().default('MXN'),
-paymentTerms: z.string().optional().nullable(),
-paymentDueDay: z.number().int().min(1).max(31).optional().nullable(),
-defaultCategoryId: z.string().optional().nullable(),
-notes: z.string().optional().nullable(),
-ownedBuildingIds: z.array(z.string()).optional().default([]),
+  personType: z.enum(['FISICA', 'MORAL']),
+  name: z.string().min(1),
+  rfc: z.string().optional().nullable(),
+  curp: z.string().optional().nullable(),
+  legalRepName: z.string().optional().nullable(),
+  legalRepRfc: z.string().optional().nullable(),
+  fiscalAddress: z.string().optional().nullable(),
+  taxRegime: z.string().optional().nullable(),
+  cfdiUse: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal('')),
+  phone: z.string().optional().nullable(),
+  contactName: z.string().optional().nullable(),
+  bankName: z.string().optional().nullable(),
+  clabe: z.string().optional().nullable(),
+  accountNumber: z.string().optional().nullable(),
+  swiftCode: z.string().optional().nullable(),
+  currency: z.string().default('MXN'),
+  paymentTerms: z.string().optional().nullable(),
+  paymentDueDay: z.number().int().min(1).max(31).optional().nullable(),
+  defaultCategoryId: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  ownedBuildingIds: z.array(z.string()).optional().default([]),
 });
 
 export async function GET(req: NextRequest) {
-const search = req.nextUrl.searchParams.get('q')?.trim();
-const readiness = req.nextUrl.searchParams.get('readiness');
+  const search = req.nextUrl.searchParams.get('q')?.trim();
+  const readiness = req.nextUrl.searchParams.get('readiness');
 
-const vendors = await prisma.vendor.findMany({
-where: {
-AND: [
-search
-? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { rfc: { contains: search, mode: 'insensitive' } }] }
-: {},
-readiness ? { readiness: readiness as any } : {},
-],
-},
-include: {
-_count: { select: { documents: true, invoices: true, ownedBuildings: true } },
-},
-orderBy: { name: 'asc' },
-});
+  const vendors = await prisma.vendor.findMany({
+    where: {
+      AND: [
+        search
+          ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { rfc: { contains: search, mode: 'insensitive' } }] }
+          : {},
+        readiness ? { readiness: readiness as any } : {},
+      ],
+    },
+    include: {
+      _count: { select: { documents: true, invoices: true, ownedBuildings: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
 
-return NextResponse.json(vendors);
+  return NextResponse.json(vendors);
 }
 
 export async function POST(req: NextRequest) {
-const user = await getCurrentUser();
-if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
 
-const body = await req.json();
-const parsed = VendorInput.safeParse(body);
-if (!parsed.success) {
-return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-}
-const { ownedBuildingIds, ...data } = parsed.data;
+  const body = await req.json();
+  const parsed = VendorInput.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  const { ownedBuildingIds, defaultCategoryId, ...data } = parsed.data;
 
-const rfc = data.rfc?.trim().toUpperCase() || null;
-if (rfc) {
-const existing = await prisma.vendor.findUnique({ where: { rfc } });
-if (existing) {
-return NextResponse.json({ error: `Ya existe un proveedor con RFC ${rfc}: ${existing.name}` }, { status: 409 });
-}
-}
+  const rfc = data.rfc?.trim().toUpperCase() || null;
+  if (rfc) {
+    const existing = await prisma.vendor.findUnique({ where: { rfc } });
+    if (existing) {
+      return NextResponse.json({ error: `Ya existe un proveedor con RFC ${rfc}: ${existing.name}` }, { status: 409 });
+    }
+  }
 
-const vendor = await prisma.vendor.create({
-data: {
-...data,
-rfc,
-email: data.email || null,
-ownedBuildings: ownedBuildingIds?.length ? { connect: ownedBuildingIds.map((id) => ({ id })) } : undefined,
-},
-});
+  // Un select sin selección manda "" en vez de nada — eso no es un ID válido
+  // de categoría, así que lo tratamos como "sin categoría por defecto".
+  const cleanDefaultCategoryId = defaultCategoryId?.trim() ? defaultCategoryId.trim() : null;
 
-await recomputeVendorReadiness(vendor.id);
-await logAudit(user.id, 'create', 'Vendor', vendor.id, vendor.name);
+  const vendor = await prisma.vendor.create({
+    data: {
+      ...data,
+      rfc,
+      email: data.email || null,
+      defaultCategoryId: cleanDefaultCategoryId,
+      ownedBuildings: ownedBuildingIds?.length ? { connect: ownedBuildingIds.map((id) => ({ id })) } : undefined,
+    },
+  });
 
-const fresh = await prisma.vendor.findUnique({ where: { id: vendor.id } });
-return NextResponse.json(fresh, { status: 201 });
+  await recomputeVendorReadiness(vendor.id);
+  await logAudit(user.id, 'create', 'Vendor', vendor.id, vendor.name);
+
+  const fresh = await prisma.vendor.findUnique({ where: { id: vendor.id } });
+  return NextResponse.json(fresh, { status: 201 });
 }

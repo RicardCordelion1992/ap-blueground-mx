@@ -18,8 +18,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const body = await req.json();
 
-  // Etapa de aprobación: solo un ADMIN puede aprobar o rechazar (mismo criterio que la
-  // aprobación de proveedores). Solo aplica a facturas que están "Por aprobar".
   if (body.status === 'APPROVED' || body.status === 'REJECTED') {
     if (user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Solo un administrador puede aprobar o rechazar facturas.' }, { status: 403 });
@@ -48,7 +46,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
-  // Reenviar una factura rechazada a revisión (vuelve a "Por aprobar").
   if (body.status === 'PENDING') {
     const current = await prisma.invoice.findUnique({ where: { id: params.id } });
     if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
@@ -63,7 +60,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
-  // Marking as paid — solo a partir de una factura ya aprobada.
   if (body.status === 'PAID') {
     const current = await prisma.invoice.findUnique({ where: { id: params.id } });
     if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
@@ -78,8 +74,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
-  // Edición completa de la factura (proveedor, montos, fechas, asignaciones) —
-  // solo un ADMIN puede editarla, y en cualquier estatus.
   if (user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Solo un administrador puede editar facturas.' }, { status: 403 });
   }
@@ -106,6 +100,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined,
       issueDate: body.issueDate ? new Date(body.issueDate) : null,
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      billingStart: body.billingStart ? new Date(body.billingStart) : null, // NUEVO
+      billingEnd: body.billingEnd ? new Date(body.billingEnd) : null, // NUEVO
       subtotal: body.subtotal ? parseFloat(body.subtotal) : null,
       taxAmount: body.taxAmount ? parseFloat(body.taxAmount) : null,
       total: body.total != null ? parseFloat(body.total) : undefined,

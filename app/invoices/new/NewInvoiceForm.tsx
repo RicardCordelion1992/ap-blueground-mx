@@ -34,6 +34,18 @@ type InitialInbound = {
   fileName: string;
 } | null;
 
+// NUEVO: convierte "YYYY-MM" (lo que da <input type="month">) en el primer y
+// último día de ese mes, en formato "YYYY-MM-DD", para guardar en
+// billingStart/billingEnd.
+function periodToRange(period: string): { billingStart: string | null; billingEnd: string | null } {
+  if (!period) return { billingStart: null, billingEnd: null };
+  const [y, m] = period.split('-').map(Number);
+  if (!y || !m) return { billingStart: null, billingEnd: null };
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0)); // día 0 del mes siguiente = último día de este mes
+  return { billingStart: start.toISOString().slice(0, 10), billingEnd: end.toISOString().slice(0, 10) };
+}
+
 export default function NewInvoiceForm({
   vendors: initialVendors,
   buildings: initialBuildings,
@@ -54,16 +66,13 @@ export default function NewInvoiceForm({
   const [receivedDate, setReceivedDate] = useState(new Date().toISOString().slice(0, 10));
   const [issueDate, setIssueDate] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [period, setPeriod] = useState(''); // NUEVO: "YYYY-MM" — mes al que corresponde el gasto
   const [subtotal, setSubtotal] = useState('');
   const [taxAmount, setTaxAmount] = useState('');
   const [total, setTotal] = useState('');
   const [notes, setNotes] = useState('');
   const [fileUrl, setFileUrl] = useState('');
   const [fileName, setFileName] = useState('');
-  // Vista previa: enlace firmado temporal que regresa /api/invoices/extract (o,
-  // si venimos de la Bandeja de correo, el que ya se firmó en el servidor),
-  // para mostrar el PDF/imagen mientras se revisan los datos extraídos (no se
-  // guarda en la factura, solo fileUrl se guarda).
   const [previewUrl, setPreviewUrl] = useState('');
   const [allocations, setAllocations] = useState<Allocation[]>([{ buildingId: '', unitId: '', amount: '' }]);
   const [extracting, setExtracting] = useState(false);
@@ -73,22 +82,11 @@ export default function NewInvoiceForm({
   const [newBuildingName, setNewBuildingName] = useState('');
   const [newVendorName, setNewVendorName] = useState('');
 
-  // Si esta factura viene de la Bandeja de correo (/invoices/bandeja), este id
-  // viaja en el POST a /api/invoices para que el servidor marque ese correo
-  // como "ya capturado" y lo vincule con la factura creada.
   const [inboundEmailId, setInboundEmailId] = useState<string | null>(initialInbound?.id ?? null);
 
-  // Carga por lotes: se pueden seleccionar varios archivos a la vez, pero cada
-  // factura se revisa y se guarda una por una (no se combinan en una sola).
-  // fileQueue = todos los archivos elegidos; queueIndex = cuál se está
-  // revisando ahora; savedCount = cuántas de esta tanda ya se guardaron.
   const [fileQueue, setFileQueue] = useState<File[]>([]);
   const [queueIndex, setQueueIndex] = useState(0);
   const [savedCount, setSavedCount] = useState(0);
-  // Para lotes de un mismo proveedor/edificio (p. ej. 50 recibos de CFE de un
-  // solo edificio): si está activo, el proveedor, la categoría y el edificio
-  // elegidos en la primera factura se mantienen para todo el lote, en vez de
-  // limpiarse después de cada "Guardar y continuar".
   const [lockVendorBuilding, setLockVendorBuilding] = useState(false);
 
   const totalNum = parseFloat(total) || 0;
@@ -100,15 +98,13 @@ export default function NewInvoiceForm({
   const inQueue = fileQueue.length > 1;
   const hasNextInQueue = inQueue && queueIndex + 1 < fileQueue.length;
 
-  // Aplica los campos extraídos (de /api/invoices/extract, o de la Bandeja de
-  // correo) al formulario: datos básicos + intento de adivinar proveedor,
-  // categoría y edificio(s) por nombre.
   function applyExtractedFields(f: ExtractedFields) {
     if (f.invoiceNumber) setInvoiceNumber(f.invoiceNumber);
     if (f.issueDate) setIssueDate(f.issueDate);
     if (f.subtotal) setSubtotal(String(f.subtotal));
     if (f.taxAmount) setTaxAmount(String(f.taxAmount));
     if (f.total) setTotal(String(f.total));
+    if (f.billingStart) setPeriod(String(f.billingStart).slice(0, 7)); // NUEVO
 
     if (f.vendorRfc) {
       const match = vendors.find((v) => v.name.toLowerCase().includes((f.vendorName || '').toLowerCase()));
@@ -130,15 +126,10 @@ export default function NewInvoiceForm({
       const share = (parseFloat(String(f.total)) / matchedBuildings.length).toFixed(2);
       setAllocations(matchedBuildings.map((buildingId) => ({ buildingId, unitId: '', amount: share })));
     } else if (f.total) {
-      // No se detectó edificio en el texto, pero si ya hay uno solo elegido
-      // (por ejemplo, viene de "mismo proveedor y edificio para todo el
-      // lote"), le asignamos el 100% del total automáticamente.
       setAllocations((rows) => (rows.length === 1 && rows[0].buildingId ? [{ ...rows[0], amount: String(f.total) }] : rows));
     }
   }
 
-  // Si llegamos desde la Bandeja de correo (?inbound=...), el archivo y los
-  // datos ya están listos del lado del servidor — no hace falta subir nada.
   useEffect(() => {
     if (!initialInbound) return;
     setInboundEmailId(initialInbound.id);
@@ -154,12 +145,6 @@ export default function NewInvoiceForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Limpia los campos de la factura actual para pasar a la siguiente del
-  // lote, sin perder la lista de edificios/proveedores/categorías.
-  // `preserveVendorAndBuilding`: para lotes de un solo proveedor/edificio
-  // (p. ej. 50 recibos de CFE de un mismo edificio) — mantiene el proveedor,
-  // la categoría y el edificio ya elegidos, y solo limpia el monto (cada
-  // recibo trae uno distinto) y los datos propios de cada factura.
   function resetInvoiceFields(preserveVendorAndBuilding = false) {
     if (!preserveVendorAndBuilding) {
       setVendorId('');
@@ -176,6 +161,7 @@ export default function NewInvoiceForm({
     setReceivedDate(new Date().toISOString().slice(0, 10));
     setIssueDate('');
     setDueDate('');
+    setPeriod(''); // NUEVO — cada factura del lote puede ser de un mes distinto
     setSubtotal('');
     setTaxAmount('');
     setTotal('');
@@ -197,8 +183,6 @@ export default function NewInvoiceForm({
     handleFile(files[0]);
   }
 
-  // Pasa a la siguiente factura del lote sin guardar la actual (útil si el
-  // archivo no es una factura válida o ya estaba cargada).
   function skipQueueItem() {
     const nextIndex = queueIndex + 1;
     resetInvoiceFields(lockVendorBuilding);
@@ -270,7 +254,7 @@ export default function NewInvoiceForm({
     }
   }
 
-    async function addVendorInline() {
+  async function addVendorInline() {
     if (!newVendorName.trim()) return;
     const res = await fetch('/api/vendors', {
       method: 'POST',
@@ -301,6 +285,8 @@ export default function NewInvoiceForm({
       return;
     }
 
+    const { billingStart, billingEnd } = periodToRange(period); // NUEVO
+
     setSaving(true);
     const res = await fetch('/api/invoices', {
       method: 'POST',
@@ -312,6 +298,8 @@ export default function NewInvoiceForm({
         receivedDate,
         issueDate: issueDate || null,
         dueDate: dueDate || null,
+        billingStart, // NUEVO
+        billingEnd, // NUEVO
         subtotal: subtotal ? parseFloat(subtotal) : null,
         taxAmount: taxAmount ? parseFloat(taxAmount) : null,
         total: totalNum,
@@ -333,9 +321,6 @@ export default function NewInvoiceForm({
     }
     const invoice = await res.json();
 
-    // Si viene de un lote y quedan más archivos, nos quedamos en el
-    // formulario: se limpia y se extraen los datos de la siguiente factura
-    // automáticamente, en vez de navegar a la factura que se acaba de guardar.
     if (hasNextInQueue) {
       const nextIndex = queueIndex + 1;
       setSavedCount((c) => c + 1);
@@ -411,7 +396,7 @@ export default function NewInvoiceForm({
         </div>
 
         <div className="card p-6 space-y-4">
-                   <div>
+          <div>
             <label className="label">Proveedor *</label>
             <select required className="input" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">Selecciona…</option>
@@ -473,20 +458,9 @@ export default function NewInvoiceForm({
               <label className="label">Fecha de vencimiento</label>
               <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="label">Subtotal</label>
-              <input type="number" step="0.01" className="input" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Impuestos</label>
-              <input type="number" step="0.01" className="input" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Total *</label>
-              <input type="number" step="0.01" required className="input" value={total} onChange={(e) => setTotal(e.target.value)} />
+              <label className="label">Periodo (mes al que corresponde)</label>
+              <input type="month" className="input" value={period} onChange={(e) => setPeriod(e.target.value)} />
             </div>
           </div>
 

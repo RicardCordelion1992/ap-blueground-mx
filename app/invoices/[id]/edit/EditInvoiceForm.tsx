@@ -243,4 +243,109 @@ export default function EditInvoiceForm({
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="label">Subtotal</label>
-            <input type="number" step="0.01"
+            <input type="number" step="0.01" className="input" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Impuestos</label>
+            <input type="number" step="0.01" className="input" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Total *</label>
+            <input type="number" step="0.01" required className="input" value={total} onChange={(e) => setTotal(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Notas</label>
+          <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="card p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium text-sm">Asignación por edificio (sin límite)</h2>
+          <button type="button" onClick={splitEvenly} className="text-xs text-brand-600 hover:underline">
+            Dividir en partes iguales
+          </button>
+        </div>
+
+        {allocations.map((row, i) => {
+          const building = buildings.find((b) => b.id === row.buildingId);
+          const pct = totalNum > 0 && row.amount ? ((parseFloat(row.amount) / totalNum) * 100).toFixed(1) : '0.0';
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                className="input flex-1"
+                value={row.buildingId}
+                onChange={(e) => updateAllocation(i, { buildingId: e.target.value, unitId: '' })}
+              >
+                <option value="">Edificio…</option>
+                {buildings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input w-36"
+                value={row.unitId}
+                disabled={!building || building.units.length === 0}
+                onChange={(e) => updateAllocation(i, { unitId: e.target.value })}
+              >
+                <option value="">Depa (opcional)</option>
+                {building?.units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.unitNumber}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Monto"
+                className="input w-32"
+                value={row.amount}
+                onChange={(e) => updateAllocation(i, { amount: e.target.value })}
+              />
+              <span className="text-xs text-gray-500 w-12 text-right">{pct}%</span>
+              <button type="button" onClick={() => removeAllocationRow(i)} className="text-gray-400 hover:text-red-600 text-sm">
+                ✕
+              </button>
+            </div>
+          );
+        })}
+
+        <button type="button" onClick={addAllocationRow} className="text-sm text-brand-600 hover:underline">
+          + Agregar edificio
+        </button>
+
+        <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+          <input
+            className="input flex-1"
+            placeholder="¿Falta un edificio? Agrégalo aquí sin salir del formulario"
+            value={newBuildingName}
+            onChange={(e) => setNewBuildingName(e.target.value)}
+          />
+          <button type="button" className="btn-secondary whitespace-nowrap" onClick={addBuildingInline}>
+            + Nuevo edificio
+          </button>
+        </div>
+
+        <p className={`text-sm ${Math.abs(diff) > 0.5 ? 'text-red-600' : 'text-green-700'}`}>
+          Asignado: ${allocatedSum.toFixed(2)} de ${totalNum.toFixed(2)} {Math.abs(diff) > 0.5 ? `(faltan $${diff.toFixed(2)})` : '✓'}
+        </p>
+      </div>
+
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">{error}</p>}
+
+      <div className="flex justify-end gap-2">
+        <a href={`/invoices/${invoice.id}`} className="btn-secondary">
+          Cancelar
+        </a>
+        <button type="submit" disabled={saving} className="btn-primary">
+          {saving ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </div>
+    </form>
+  );
+}

@@ -31,6 +31,7 @@ export default async function EditInvoicePage({ params }: { params: { id: string
     receivedDate: invoice.receivedDate.toISOString().slice(0, 10),
     issueDate: invoice.issueDate ? invoice.issueDate.toISOString().slice(0, 10) : '',
     dueDate: invoice.dueDate ? invoice.dueDate.toISOString().slice(0, 10) : '',
+    period: invoice.billingStart ? invoice.billingStart.toISOString().slice(0, 7) : '',
     subtotal: invoice.subtotal != null ? String(invoice.subtotal) : '',
     taxAmount: invoice.taxAmount != null ? String(invoice.taxAmount) : '',
     total: String(invoice.total),

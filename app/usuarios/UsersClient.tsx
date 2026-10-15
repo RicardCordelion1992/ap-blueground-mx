@@ -1,311 +1,77 @@
-'use client';
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/currentUser';
+import { createAdminClient } from '@/lib/supabase/server';
+import { logAudit } from '@/lib/audit';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+const ROLES = ['ADMIN', 'FINANCE', 'VIEWER', 'CARDHOLDER'] as const;
+type Role = (typeof ROLES)[number];
 
-type Role = 'ADMIN' | 'FINANCE' | 'VIEWER' | 'CARDHOLDER';
-
-type UserRow = {
-  id: string;
-  email: string;
-  name: string;
-  role: Role;
-  active: boolean;
-  createdAt: string;
-};
-
-const ROLE_LABEL: Record<Role, string> = {
-  ADMIN: 'Administrador',
-  FINANCE: 'Finanzas',
-  VIEWER: 'Solo lectura',
-  CARDHOLDER: 'Tarjetahabiente (solo gastos de tarjeta)',
-};
-
-function generatePassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < 10; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+export async function GET() {
+  const me = await getCurrentUser();
+  if (!me || me.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
   }
-  return out;
+
+  const users = await prisma.user.findMany({ orderBy: { name: 'asc' } });
+  return NextResponse.json(users);
 }
 
-export default function UsersClient({
-  users,
-  currentUserId,
-}: {
-  users: UserRow[];
-  currentUserId: string;
-}) {
-  const router = useRouter();
-  const [form, setForm] = useState({ email: '', name: '', role: 'FINANCE' as Role, password: '' });
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
-  const [rowBusy, setRowBusy] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
-  const [rowNotice, setRowNotice] = useState<{ id: string; message: string } | null>(null);
-  const [resetRowId, setResetRowId] = useState<string | null>(null);
-  const [resetPassword, setResetPassword] = useState('');
+export async function POST(req: NextRequest) {
+  const me = await getCurrentUser();
+  if (!me || me.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
 
-  async function createUser(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    setCreateError(null);
-    setCreated(null);
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+  const body = await req.json();
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const role = ROLES.includes(body.role) ? (body.role as Role) : null;
+  const password = typeof body.password === 'string' ? body.password.trim() : '';
+
+  if (!email) return NextResponse.json({ error: 'El correo es requerido' }, { status: 400 });
+  if (!name) return NextResponse.json({ error: 'El nombre es requerido' }, { status: 400 });
+  if (!role) return NextResponse.json({ error: 'El rol no es válido' }, { status: 400 });
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return NextResponse.json({ error: 'Ya existe un usuario con ese correo.' }, { status: 409 });
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (error || !data.user) {
+    return NextResponse.json(
+      { error: error?.message || 'No se pudo crear la cuenta de acceso.' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        email,
+        name,
+        role,
+        active: true,
+        authUserId: data.user.id,
+      } as any,
     });
-    setCreating(false);
-    if (!res.ok) {
-      const body = await res.json();
-      setCreateError(typeof body.error === 'string' ? body.error : 'No se pudo crear el usuario.');
-      return;
-    }
-    setCreated({ email: form.email, password: form.password });
-    setForm({ email: '', name: '', role: 'FINANCE', password: '' });
-    router.refresh();
+
+    await logAudit(me.id, 'create', 'User', user.id, `${user.email} (${user.role})`);
+
+    return NextResponse.json(user, { status: 201 });
+  } catch (err) {
+    // Si falla al guardar en la base, borramos la cuenta de acceso para no dejarla huérfana.
+    await admin.auth.admin.deleteUser(data.user.id);
+    return NextResponse.json({ error: 'No se pudo guardar el usuario en la base de datos.' }, { status: 500 });
   }
-
-  async function updateUser(id: string, data: Partial<{ role: Role; active: boolean; password: string }>) {
-    setRowBusy(id);
-    setRowError(null);
-    setRowNotice(null);
-    const res = await fetch(`/api/users/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setRowBusy(null);
-    if (!res.ok) {
-      const body = await res.json();
-      setRowError({ id, message: typeof body.error === 'string' ? body.error : 'No se pudo actualizar.' });
-      return;
-    }
-    if (typeof data.password === 'string') {
-      setRowNotice({ id, message: 'Contraseña actualizada.' });
-      setResetRowId(null);
-      setResetPassword('');
-    }
-    router.refresh();
-  }
-
-  // Hard delete — only succeeds server-side if the user has no associated
-  // history (facturas, documentos, actividad). Otherwise the API returns a
-  // clear error telling the admin to use "Desactivar" instead.
-  async function deleteUser(id: string, email: string) {
-    if (!window.confirm(`¿Eliminar a ${email}? Esta acción no se puede deshacer.`)) return;
-    setRowBusy(id);
-    setRowError(null);
-    setRowNotice(null);
-    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
-    setRowBusy(null);
-    if (!res.ok) {
-      const body = await res.json();
-      setRowError({ id, message: typeof body.error === 'string' ? body.error : 'No se pudo eliminar.' });
-      return;
-    }
-    router.refresh();
-  }
-
-  return (
-    <div className="space-y-6">
-      <form onSubmit={createUser} className="card p-4 flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <label className="label">Correo</label>
-          <input
-            type="email"
-            required
-            className="input"
-            placeholder="nombre@correo.com"
-            value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-          />
-        </div>
-        <div className="flex-1 min-w-[160px]">
-          <label className="label">Nombre</label>
-          <input
-            required
-            className="input"
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </div>
-        <div className="min-w-[160px]">
-          <label className="label">Rol</label>
-          <select
-            className="input"
-            value={form.role}
-            onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Role }))}
-          >
-            {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[220px]">
-          <label className="label">Contraseña inicial</label>
-          <div className="flex gap-2">
-            <input
-              required
-              minLength={8}
-              className="input"
-              placeholder="Mínimo 8 caracteres"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-            />
-            <button
-              type="button"
-              className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap"
-              onClick={() => setForm((f) => ({ ...f, password: generatePassword() }))}
-            >
-              Generar
-            </button>
-          </div>
-        </div>
-        <button type="submit" disabled={creating} className="btn-primary">
-          {creating ? 'Creando…' : '+ Dar de alta'}
-        </button>
-        {createError && <p className="text-sm text-red-600 w-full">{createError}</p>}
-        {created && !createError && (
-          <p className="text-sm text-green-700 w-full">
-            Usuario {created.email} creado con la contraseña <strong>{created.password}</strong>. Cópiala y
-            compártela con esa persona — no queda guardada en ningún otro lugar.
-          </p>
-        )}
-      </form>
-
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="text-left text-gray-500 border-b border-gray-100">
-            <tr>
-              <th className="px-4 py-2 font-medium">Nombre</th>
-              <th className="px-4 py-2 font-medium">Correo</th>
-              <th className="px-4 py-2 font-medium">Rol</th>
-              <th className="px-4 py-2 font-medium">Acceso</th>
-              <th className="px-4 py-2 font-medium">Desde</th>
-              <th className="px-4 py-2 font-medium">Contraseña</th>
-              <th className="px-4 py-2 font-medium">Eliminar</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => {
-              const isMe = u.id === currentUserId;
-              const busy = rowBusy === u.id;
-              const resetting = resetRowId === u.id;
-              return (
-                <tr key={u.id} className="border-b border-gray-50 last:border-0 align-top">
-                  <td className="px-4 py-2">
-                    {u.name} {isMe && <span className="text-xs text-gray-400">(tú)</span>}
-                  </td>
-                  <td className="px-4 py-2 text-gray-600">{u.email}</td>
-                  <td className="px-4 py-2">
-                    <select
-                      className="input py-1"
-                      value={u.role}
-                      disabled={isMe || busy}
-                      onChange={(e) => updateUser(u.id, { role: e.target.value as Role })}
-                    >
-                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-                        <option key={r} value={r}>
-                          {ROLE_LABEL[r]}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    {isMe ? (
-                      <span className="badge-ready">Activo</span>
-                    ) : (
-                      <button
-                        disabled={busy}
-                        onClick={() => updateUser(u.id, { active: !u.active })}
-                        className={u.active ? 'badge-ready' : 'badge-incomplete'}
-                      >
-                        {u.active ? 'Activo' : 'Desactivado'}
-                      </button>
-                    )}
-                    {rowError?.id === u.id && <p className="text-xs text-red-600 mt-1">{rowError.message}</p>}
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">
-                    {new Date(u.createdAt).toLocaleDateString('es-MX')}
-                  </td>
-                  <td className="px-4 py-2">
-                    {isMe ? (
-                      <span className="text-xs text-gray-400">—</span>
-                    ) : resetting ? (
-                      <div className="flex gap-1 items-center">
-                        <input
-                          autoFocus
-                          className="input py-1 text-xs"
-                          placeholder="Nueva contraseña"
-                          value={resetPassword}
-                          onChange={(e) => setResetPassword(e.target.value)}
-                        />
-                        <button
-                          disabled={busy || resetPassword.trim().length < 8}
-                          onClick={() => updateUser(u.id, { password: resetPassword.trim() })}
-                          className="text-xs text-brand-600 hover:underline whitespace-nowrap"
-                        >
-                          Guardar
-                        </button>
-                        <button
-                          onClick={() => {
-                            setResetRowId(null);
-                            setResetPassword('');
-                          }}
-                          className="text-xs text-gray-400 hover:underline"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        disabled={busy}
-                        onClick={() => {
-                          setResetRowId(u.id);
-                          setResetPassword('');
-                        }}
-                        className="text-xs text-brand-600 hover:underline"
-                      >
-                        Restablecer
-                      </button>
-                    )}
-                    {rowNotice?.id === u.id && <p className="text-xs text-green-700 mt-1">{rowNotice.message}</p>}
-                  </td>
-                  <td className="px-4 py-2">
-                    {isMe ? (
-                      <span className="text-xs text-gray-400">—</span>
-                    ) : (
-                      <button
-                        disabled={busy}
-                        onClick={() => deleteUser(u.id, u.email)}
-                        className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {busy ? '…' : 'Eliminar'}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-gray-500">
-        Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso
-        es que tú las hayas dado de alta, no el dominio del correo. Tú defines su contraseña inicial al
-        crearlas y puedes restablecerla cuando quieras; cada persona también puede cambiarla desde su cuenta
-        o recuperarla ella misma si la olvida. Desactivar a alguien bloquea su entrada de inmediato
-        conservando su historial (facturas, documentos). Eliminar borra al usuario por completo y solo es
-        posible si no tiene historial asociado (facturas, documentos o actividad registrada) — si lo tiene,
-        usa Desactivar en su lugar. Un "Tarjetahabiente" solo puede entrar a Gastos de tarjeta a subir sus
-        comprobantes y clasificarlos por edificio — no ve nada más de la plataforma.
-      </p>
-    </div>
-  );
 }

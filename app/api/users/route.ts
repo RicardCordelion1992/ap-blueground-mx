@@ -1,117 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/currentUser';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 
 const ROLES = ['ADMIN', 'FINANCE', 'VIEWER', 'CARDHOLDER'] as const;
 type Role = (typeof ROLES)[number];
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET() {
+  const me = await getCurrentUser();
+  if (!me || me.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
+
+  const users = await prisma.user.findMany({ orderBy: { name: 'asc' } });
+  return NextResponse.json(users);
+}
+
+export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me || me.role !== 'ADMIN') {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
   }
 
   const body = await req.json();
-  const isSelf = params.id === me.id;
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const role = ROLES.includes(body.role) ? (body.role as Role) : null;
+  const password = typeof body.password === 'string' ? body.password.trim() : '';
 
-  if (typeof body.password === 'string') {
-    const password = body.password.trim();
-    if (password.length < 8) {
-      return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
-    }
-
-    // Changing your OWN password uses your live session.
-    if (isSelf) {
-      const supabase = createClient();
-      const { data, error } = await supabase.auth.updateUser({ password });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-      const meAny = me as any;
-      if (data.user && meAny.authUserId !== data.user.id) {
-        await prisma.user.update({ where: { id: me.id }, data: { authUserId: data.user.id } as any });
-      }
-
-      await logAudit(me.id, 'password_reset', 'User', params.id, 'propia');
-      return NextResponse.json({ ok: true });
-    }
-
-    // Setting someone else's password uses the Supabase admin API directly.
-    const target = await prisma.user.findUnique({ where: { id: params.id } });
-    if (!target) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
-    const targetAny = target as any;
-    if (!targetAny.authUserId) {
-      return NextResponse.json(
-        { error: 'Este usuario no tiene una cuenta de acceso vinculada.' },
-        { status: 400 }
-      );
-    }
-
-    const admin = createAdminClient();
-    const { error } = await admin.auth.admin.updateUserById(targetAny.authUserId, { password });
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-    await logAudit(me.id, 'password_reset', 'User', params.id, target.email);
-    return NextResponse.json({ ok: true });
+  if (!email) return NextResponse.json({ error: 'El correo es requerido' }, { status: 400 });
+  if (!name) return NextResponse.json({ error: 'El nombre es requerido' }, { status: 400 });
+  if (!role) return NextResponse.json({ error: 'El rol no es válido' }, { status: 400 });
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
   }
 
-  if (isSelf) {
-    return NextResponse.json({ error: 'No puedes cambiar tu propio acceso desde aquí.' }, { status: 400 });
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return NextResponse.json({ error: 'Ya existe un usuario con ese correo.' }, { status: 409 });
   }
 
-  const data: { role?: Role; active?: boolean } = {};
-  if (ROLES.includes(body.role)) data.role = body.role as Role;
-  if (typeof body.active === 'boolean') data.active = body.active;
+  const admin = createAdminClient();
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
 
-  if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: 'Nada que actualizar' }, { status: 400 });
-  }
-
-  const user = await prisma.user.update({ where: { id: params.id }, data });
-  await logAudit(me.id, 'update', 'User', user.id, `role=${user.role} active=${user.active}`);
-
-  return NextResponse.json(user);
-}
-
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const me = await getCurrentUser();
-  if (!me || me.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
-  }
-
-  if (params.id === me.id) {
-    return NextResponse.json({ error: 'No puedes eliminar tu propia cuenta.' }, { status: 400 });
-  }
-
-  const target = await prisma.user.findUnique({ where: { id: params.id } });
-  if (!target) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
-
-  const [invoicesCreated, invoicesApproved, documentsUploaded, auditLogs] = await Promise.all([
-    prisma.invoice.count({ where: { createdById: params.id } }),
-    prisma.invoice.count({ where: { approvedById: params.id } }),
-    prisma.vendorDocument.count({ where: { uploadedById: params.id } }),
-    prisma.auditLog.count({ where: { userId: params.id } }),
-  ]);
-
-  if (invoicesCreated > 0 || invoicesApproved > 0 || documentsUploaded > 0 || auditLogs > 0) {
+  if (error || !data.user) {
     return NextResponse.json(
-      {
-        error:
-          'Este usuario tiene historial asociado (facturas, documentos o actividad registrada) y no se puede eliminar sin perder ese rastro. Usa "Desactivar" en su lugar — bloquea su acceso de inmediato y conserva su historial.',
-      },
-      { status: 409 }
+      { error: error?.message || 'No se pudo crear la cuenta de acceso.' },
+      { status: 400 }
     );
   }
 
-  const targetAny = target as any;
-  if (targetAny.authUserId) {
-    const admin = createAdminClient();
-    await admin.auth.admin.deleteUser(targetAny.authUserId);
+  try {
+    const user = await prisma.user.create({
+      data: {
+        email,
+        name,
+        role,
+        active: true,
+        authUserId: data.user.id,
+      } as any,
+    });
+
+    await logAudit(me.id, 'create', 'User', user.id, `${user.email} (${user.role})`);
+
+    return NextResponse.json(user, { status: 201 });
+  } catch (err) {
+    // Si falla al guardar en la base, borramos la cuenta de acceso para no dejarla huérfana.
+    await admin.auth.admin.deleteUser(data.user.id);
+    return NextResponse.json({ error: 'No se pudo guardar el usuario en la base de datos.' }, { status: 500 });
   }
-
-  await prisma.user.delete({ where: { id: params.id } });
-  await logAudit(me.id, 'delete', 'User', params.id, target.email);
-
-  return NextResponse.json({ ok: true });
 }

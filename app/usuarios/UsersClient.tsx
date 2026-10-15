@@ -205,3 +205,107 @@ export default function UsersClient({
                   <td className="px-4 py-2 text-gray-600">{u.email}</td>
                   <td className="px-4 py-2">
                     <select
+                      className="input py-1"
+                      value={u.role}
+                      disabled={isMe || busy}
+                      onChange={(e) => updateUser(u.id, { role: e.target.value as Role })}
+                    >
+                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABEL[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    {isMe ? (
+                      <span className="badge-ready">Activo</span>
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() => updateUser(u.id, { active: !u.active })}
+                        className={u.active ? 'badge-ready' : 'badge-incomplete'}
+                      >
+                        {u.active ? 'Activo' : 'Desactivado'}
+                      </button>
+                    )}
+                    {rowError?.id === u.id && <p className="text-xs text-red-600 mt-1">{rowError.message}</p>}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500">
+                    {new Date(u.createdAt).toLocaleDateString('es-MX')}
+                  </td>
+                  <td className="px-4 py-2">
+                    {isMe ? (
+                      <span className="text-xs text-gray-400">—</span>
+                    ) : resetting ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          autoFocus
+                          className="input py-1 text-xs"
+                          placeholder="Nueva contraseña"
+                          value={resetPassword}
+                          onChange={(e) => setResetPassword(e.target.value)}
+                        />
+                        <button
+                          disabled={busy || resetPassword.trim().length < 8}
+                          onClick={() => updateUser(u.id, { password: resetPassword.trim() })}
+                          className="text-xs text-brand-600 hover:underline whitespace-nowrap"
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setResetRowId(null);
+                            setResetPassword('');
+                          }}
+                          className="text-xs text-gray-400 hover:underline"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          setResetRowId(u.id);
+                          setResetPassword('');
+                        }}
+                        className="text-xs text-brand-600 hover:underline"
+                      >
+                        Restablecer
+                      </button>
+                    )}
+                    {rowNotice?.id === u.id && <p className="text-xs text-green-700 mt-1">{rowNotice.message}</p>}
+                  </td>
+                  <td className="px-4 py-2">
+                    {isMe ? (
+                      <span className="text-xs text-gray-400">—</span>
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() => deleteUser(u.id, u.email)}
+                        className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {busy ? '…' : 'Eliminar'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-500">
+        Solo las personas dadas de alta aquí pueden entrar, con cualquier correo — lo que controla el acceso
+        es que tú las hayas dado de alta, no el dominio del correo. Tú defines su contraseña inicial al
+        crearlas y puedes restablecerla cuando quieras; cada persona también puede cambiarla desde su cuenta
+        o recuperarla ella misma si la olvida. Desactivar a alguien bloquea su entrada de inmediato
+        conservando su historial (facturas, documentos). Eliminar borra al usuario por completo y solo es
+        posible si no tiene historial asociado (facturas, documentos o actividad registrada) — si lo tiene,
+        usa Desactivar en su lugar. Un "Tarjetahabiente" solo puede entrar a Gastos de tarjeta a subir sus
+        comprobantes y clasificarlos por edificio — no ve nada más de la plataforma.
+      </p>
+    </div>
+  );
+}

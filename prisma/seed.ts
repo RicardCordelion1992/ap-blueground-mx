@@ -122,16 +122,12 @@ async function main() {
     'Otros',
   ];
 
-  for (const name of OLD_GENERIC_CATEGORIES) {
-    const cat = await prisma.expenseCategory.findUnique({ where: { name } });
-    if (!cat) continue;
-    const inUse = await prisma.invoice.count({ where: { categoryId: cat.id } });
-    if (inUse === 0) {
-      await prisma.expenseCategory.delete({ where: { id: cat.id } });
-      console.log(`Categoría eliminada (no usada): ${name}`);
-    } else {
-      console.log(`Categoría "${name}" no se borró porque tiene ${inUse} factura(s) usándola.`);
-    }
+ for (const name of CATEGORIES) {
+    await prisma.expenseCategory.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
   }
 
   for (const dt of DOCUMENT_TYPE_SEED) {

@@ -97,6 +97,7 @@ const CATEGORIES = [
   // Genéricas que decidiste dejar separadas
   'Rental expense',
   'Interest',
+  'Food vouchers',
 ];
 
 async function main() {

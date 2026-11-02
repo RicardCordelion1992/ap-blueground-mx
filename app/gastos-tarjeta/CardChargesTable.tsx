@@ -84,11 +84,17 @@ export default function CardChargesTable({
         body: JSON.stringify({ buildingId: sel.buildingId, categoryId: sel.categoryId }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || 'No se pudo guardar');
+        let detail = `HTTP ${res.status}`;
+        try {
+          const data = await res.json();
+          if (data?.error) detail += `: ${data.error}`;
+        } catch {}
+        setError(detail);
       } else {
         router.refresh();
       }
+    } catch (err: any) {
+      setError(err?.message || 'Error de red');
     } finally {
       setSavingId(null);
     }
@@ -104,11 +110,17 @@ export default function CardChargesTable({
         body: JSON.stringify({ ignore: true }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || 'No se pudo ignorar');
+        let detail = `HTTP ${res.status}`;
+        try {
+          const data = await res.json();
+          if (data?.error) detail += `: ${data.error}`;
+        } catch {}
+        setError(detail);
       } else {
         router.refresh();
       }
+    } catch (err: any) {
+      setError(err?.message || 'Error de red');
     } finally {
       setSavingId(null);
     }
@@ -122,7 +134,7 @@ export default function CardChargesTable({
     setBulkSaving(true);
     setBulkMessage(null);
     let ok = 0;
-    let failed = 0;
+    const errors: string[] = [];
     for (const id of selectedIds) {
       try {
         const res = await fetch(`/api/card-charges/${id}`, {
@@ -130,15 +142,28 @@ export default function CardChargesTable({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ buildingId: bulkBuildingId, categoryId: bulkCategoryId }),
         });
-        if (res.ok) ok++;
-        else failed++;
-      } catch {
-        failed++;
+        if (res.ok) {
+          ok++;
+        } else {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const data = await res.json();
+            if (data?.error) detail += `: ${data.error}`;
+          } catch {}
+          errors.push(detail);
+        }
+      } catch (err: any) {
+        errors.push(err?.message || 'Error de red');
       }
     }
     setBulkSaving(false);
     setSelectedIds(new Set());
-    setBulkMessage(`Se clasificaron ${ok} cargos.${failed ? ` ${failed} fallaron.` : ''}`);
+    if (errors.length > 0) {
+      const uniqueErrors = Array.from(new Set(errors));
+      setBulkMessage(`Se clasificaron ${ok} cargos. ${errors.length} fallaron: ${uniqueErrors.join(' | ')}`);
+    } else {
+      setBulkMessage(`Se clasificaron ${ok} cargos.`);
+    }
     router.refresh();
   }
 

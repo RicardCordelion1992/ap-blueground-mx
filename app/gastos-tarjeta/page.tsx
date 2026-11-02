@@ -37,4 +37,49 @@ export default async function GastosTarjetaPage() {
       id: r.id,
       uploadedByName: r.uploadedBy?.name || '—',
       provider: r.provider,
-      amount: r.amount !== null ? Number(r.amount) :
+      amount: r.amount !== null ? Number(r.amount) : null,
+      expenseDate: r.expenseDate ? r.expenseDate.toISOString() : null,
+      description: r.description,
+      buildingId: r.buildingId,
+      buildingName: r.building.name,
+      categoryId: r.categoryId,
+      categoryName: r.category?.name || null,
+      previewUrl: await signDocUrl(INVOICES_BUCKET, r.fileUrl),
+      createdAt: r.createdAt.toISOString(),
+    }))
+  );
+
+  const cardChargeRows = cardCharges.map((c) => ({
+    id: c.id,
+    chargeDate: c.chargeDate.toISOString(),
+    descriptor: c.descriptor,
+    amount: Number(c.amount),
+    cardHolder: c.cardHolder,
+    cardLast4: c.cardLast4,
+    assignedUserName: c.assignedUser?.name || null,
+  }));
+
+  const buildingOptions = buildings.map((b) => ({ id: b.id, name: b.name }));
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold">Gastos de tarjeta</h1>
+        <p className="text-sm text-gray-500">...</p>
+      </div>
+      {canSeeAll && <ImportStatementForm />}
+      <div>
+        <h2 className="text-base font-semibold mb-2">Cargos por clasificar</h2>
+        <CardChargesTable
+          charges={cardChargeRows}
+          buildings={buildingOptions}
+          categories={categoryOptions}
+          showCardHolder={canSeeAll}
+        />
+      </div>
+      <UploadReceipt buildings={buildingOptions} categories={categoryOptions} />
+      <ReceiptsTable receipts={rows} buildings={buildingOptions} categories={categoryOptions} showUploadedBy={canSeeAll} />
+    </div>
+  );
+}

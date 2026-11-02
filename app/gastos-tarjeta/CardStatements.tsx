@@ -10,6 +10,7 @@ type BatchSummary = {
   label: string;
   createdAt: string;
   total: number;
+  totalAmount: number;
   pending: number;
   classified: number;
   ignored: number;
@@ -69,9 +70,12 @@ export default function CardStatements({
               }`}
             >
               <div className="font-medium">{b.label}</div>
-              <div className="text-xs text-gray-500">
+               <div className="text-xs text-gray-500">
                 {b.pending} pendientes · {b.classified} clasificados
                 {b.ignored > 0 ? ` · ${b.ignored} ignorados` : ''}
+              </div>
+              <div className="text-xs font-medium text-gray-700 mt-0.5">
+                Total: ${b.totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
               </div>
             </button>
           ))}

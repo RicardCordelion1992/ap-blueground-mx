@@ -88,6 +88,7 @@ export default async function GastosTarjetaPage() {
       label: batchLabel(b.fileName, b.createdAt),
       createdAt: b.createdAt.toISOString(),
       total: b.charges.length,
+      totalAmount: b.charges.reduce((sum, c) => sum + Number(c.amount), 0),
       pending: b.charges.filter((c) => c.status === 'UNMATCHED').length,
       classified: b.charges.filter((c) => c.status === 'CLASSIFIED' || c.status === 'MATCHED').length,
       ignored: b.charges.filter((c) => c.status === 'IGNORED').length,

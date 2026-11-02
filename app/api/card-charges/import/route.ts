@@ -142,19 +142,17 @@ export async function POST(req: NextRequest) {
   const parsedRows =
     format === 'BREX' ? parseBrexRows(headers, dataRows) : parseJeevesRows(headers, dataRows);
 
-  const validRows = parsedRows.filter((r) => r.amount !== null);
+  // chargeDate y descriptor son obligatorios en el modelo CardCharge —
+  // se descartan silenciosamente las filas sin fecha o sin monto (vacías / totales / encabezados sueltos).
+  const validRows = parsedRows.filter((r) => r.amount !== null && r.chargeDate !== null);
 
   const allUsers = await prisma.user.findMany({ select: { id: true, name: true } });
-  const nameToId = new Map(
-    allUsers.map((u) => [u.name.trim().toLowerCase(), u.id])
-  );
+  const nameToId = new Map(allUsers.map((u) => [u.name.trim().toLowerCase(), u.id]));
 
   const batch = await prisma.cardImportBatch.create({
     data: {
-      format,
       fileName: file.name,
       importedById: me.id,
-      totalRows: validRows.length,
     },
   });
 
@@ -172,10 +170,10 @@ export async function POST(req: NextRequest) {
     await prisma.cardCharge.create({
       data: {
         batchId: batch.id,
-        chargeDate: row.chargeDate,
+        chargeDate: row.chargeDate as Date,
+        descriptor: row.descriptor || '(sin descripción)',
         amount: row.amount as number,
-        cardHolderName: row.cardHolderName,
-        descriptor: row.descriptor,
+        cardHolder: row.cardHolderName,
         cardLast4: row.cardLast4,
         assignedUserId,
         status: 'UNMATCHED',
@@ -185,6 +183,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     batchId: batch.id,
+    format,
     total: validRows.length,
     matched,
     unmatched,

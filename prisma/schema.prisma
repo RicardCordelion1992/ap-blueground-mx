@@ -42,7 +42,8 @@ model User {
   auditLogs            AuditLog[]
   cardImportBatches    CardImportBatch[]
   paymentProofsUploaded PaymentProof[]
-  cardExpenseReceipts  CardExpenseReceipt[]cardCharges          CardCharge[]
+  cardExpenseReceipts  CardExpenseReceipt[]
+  cardCharges          CardCharge[]
 }
 
 // ---------- Vendors / Landlords ----------
@@ -362,7 +363,9 @@ model CardCharge {
   descriptor String // texto del comercio tal como aparece en el estado de cuenta
   amount     Decimal @db.Decimal(14, 2)
   cardHolder String? // persona/tarjeta responsable de este cargo específico (puede venir del CSV o copiarse del batch)
-  cardLast4  String?  assignedUserId String?
+  cardLast4  String?
+
+  assignedUserId String?
   assignedUser   User?   @relation(fields: [assignedUserId], references: [id])
 
   status CardChargeStatus @default(UNMATCHED)

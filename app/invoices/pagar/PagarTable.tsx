@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import MarkPaidButton from '../[id]/MarkPaidButton';
 
 type Row = {
   id: string;
@@ -11,6 +10,7 @@ type Row = {
   categoryName: string | null;
   periodLabel: string;
   buildingLabel: string;
+  buildingNames: string[];
   total: number;
   dueDate: string | null;
   payable: boolean;
@@ -18,7 +18,100 @@ type Row = {
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
-export default function PagarTable({ invoices }: { invoices: Row[] }) {
+function PaymentActionCell({ invoiceId, payable }: { invoiceId: string; payable: boolean }) {
+  const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard'>('idle');
+  const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function uploadProof(file: File) {
+    setState('working');
+    setError(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/invoices/${invoiceId}/payment-proof`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'No se pudo subir el comprobante');
+      setState('idle');
+      return;
+    }
+    setProofViewUrl(data.proofViewUrl);
+    setState('paidProof');
+  }
+
+  async function markPaidCard() {
+    setState('working');
+    setError(null);
+    const res = await fetch(`/api/invoices/${invoiceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'PAID', paidVia: 'Tarjeta corporativa', paidDate: new Date().toISOString() }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error || 'No se pudo marcar como pagada');
+      setState('idle');
+      return;
+    }
+    setState('paidCard');
+  }
+
+  if (state === 'paidProof') {
+    return (
+      <div className="text-xs">
+        <span className="text-green-700 font-medium">✓ Pagada</span>
+        {proofViewUrl && (
+          <>
+            {' · '}
+            <a href={proofViewUrl} target="_blank" className="text-brand-600 hover:underline">
+              Ver comprobante
+            </a>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (state === 'paidCard') {
+    return <span className="text-xs text-green-700 font-medium">✓ Pagada con tarjeta</span>;
+  }
+
+  return (
+    <div className="space-y-1">
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex flex-col gap-1">
+        <label className="btn-secondary text-xs cursor-pointer text-center">
+          {state === 'working' ? 'Subiendo…' : 'Subir comprobante'}
+          <input
+            type="file"
+            className="hidden"
+            accept="application/pdf,image/*"
+            disabled={!payable || state === 'working'}
+            onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
+          />
+        </label>
+        <button
+          onClick={markPaidCard}
+          disabled={!payable || state === 'working'}
+          className="btn-secondary text-xs disabled:opacity-40"
+        >
+          Marcar pagada con tarjeta
+        </button>
+      </div>
+      {!payable && <p className="text-xs text-amber-700">Proveedor no "Ready".</p>}
+    </div>
+  );
+}
+
+export default function PagarTable({
+  invoices,
+  buildingOptions,
+  categoryOptions,
+}: {
+  invoices: Row[];
+  buildingOptions: string[];
+  categoryOptions: string[];
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [paidDate, setPaidDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -26,7 +119,26 @@ export default function PagarTable({ invoices }: { invoices: Row[] }) {
   const [saving, setSaving] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
-  const selectableRows = useMemo(() => invoices.filter((inv) => inv.payable), [invoices]);
+  const [vendorQuery, setVendorQuery] = useState('');
+  const [buildingFilter, setBuildingFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      if (vendorQuery.trim() && !inv.vendorName.toLowerCase().includes(vendorQuery.trim().toLowerCase())) {
+        return false;
+      }
+      if (buildingFilter && !inv.buildingNames.includes(buildingFilter)) {
+        return false;
+      }
+      if (categoryFilter && inv.categoryName !== categoryFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [invoices, vendorQuery, buildingFilter, categoryFilter]);
+
+  const selectableRows = useMemo(() => filteredInvoices.filter((inv) => inv.payable), [filteredInvoices]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -62,6 +174,41 @@ export default function PagarTable({ invoices }: { invoices: Row[] }) {
 
   return (
     <div className="space-y-3">
+      <div className="card p-3 flex flex-wrap gap-3 items-end">
+        <div>
+          <label className="label">Buscar proveedor</label>
+          <input
+            type="text"
+            className="input"
+            placeholder="Nombre del proveedor…"
+            value={vendorQuery}
+            onChange={(e) => setVendorQuery(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Edificio</label>
+          <select className="input" value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
+            <option value="">Todos</option>
+            {buildingOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Categoría</label>
+          <select className="input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">Todas</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {selected.size > 0 && (
         <div className="card p-4 flex flex-wrap items-end gap-3 bg-brand-50 border border-brand-200">
           <div>
@@ -110,7 +257,7 @@ export default function PagarTable({ invoices }: { invoices: Row[] }) {
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {filteredInvoices.map((inv) => (
               <tr key={inv.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-2">
                   <input
@@ -131,14 +278,14 @@ export default function PagarTable({ invoices }: { invoices: Row[] }) {
                 <td className="px-4 py-2">{fmt(inv.total)}</td>
                 <td className="px-4 py-2 text-gray-500">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-MX') : '—'}</td>
                 <td className="px-4 py-2">
-                  <MarkPaidButton invoiceId={inv.id} disabled={!inv.payable} />
+                  <PaymentActionCell invoiceId={inv.id} payable={inv.payable} />
                 </td>
               </tr>
             ))}
-            {invoices.length === 0 && (
+            {filteredInvoices.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                  No hay facturas aprobadas en espera de pago.
+                  No hay facturas que coincidan.
                 </td>
               </tr>
             )}

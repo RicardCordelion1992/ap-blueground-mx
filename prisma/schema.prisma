@@ -345,6 +345,7 @@ enum CardChargeStatus {
 model CardImportBatch {
   id           String   @id @default(cuid())
   fileName     String?
+  label        String? // nombre editable del estado de cuenta (ej. "Brex — octubre 2026"); si es null se usa uno generado automáticamente
   cardHolder   String? // a quién pertenece la tarjeta de este estado de cuenta, tal como se indicó al subir el CSV
   cardLast4    String?
   importedById String?

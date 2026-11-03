@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import CardChargesTable from './CardChargesTable';
 
 type Option = { id: string; name: string };
@@ -43,18 +44,53 @@ export default function CardStatements({
   categories: Option[];
   showCardHolder: boolean;
 }) {
+  const router = useRouter();
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
     batches.length > 0 ? batches[0].id : null
   );
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [savingLabel, setSavingLabel] = useState(false);
+  const [userFilter, setUserFilter] = useState('');
 
   if (batches.length === 0) {
     return <p className="text-sm text-gray-500">Todavía no se ha importado ningún estado de cuenta.</p>;
   }
 
   const selected = batches.find((b) => b.id === selectedBatchId) || batches[0];
-  const batchCharges = charges.filter((c) => c.batchId === selected.id);
+  const rawBatchCharges = charges.filter((c) => c.batchId === selected.id);
+  const userOptions = Array.from(
+    new Set(rawBatchCharges.map((c) => c.assignedUserName || c.cardHolder).filter((n): n is string => !!n))
+  ).sort();
+  const batchCharges = userFilter
+    ? rawBatchCharges.filter((c) => (c.assignedUserName || c.cardHolder) === userFilter)
+    : rawBatchCharges;
   const pendingCharges = batchCharges.filter((c) => c.status === 'UNMATCHED');
   const resolvedCharges = batchCharges.filter((c) => c.status !== 'UNMATCHED');
+
+  function selectBatch(id: string) {
+    setSelectedBatchId(id);
+    setUserFilter('');
+  }
+
+  function startEdit(b: BatchSummary) {
+    setEditingBatchId(b.id);
+    setEditValue(b.label);
+  }
+
+  async function saveLabel(batchId: string) {
+    const trimmed = editValue.trim();
+    if (!trimmed) return;
+    setSavingLabel(true);
+    await fetch(`/api/card-charges/batches/${batchId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: trimmed }),
+    });
+    setSavingLabel(false);
+    setEditingBatchId(null);
+    router.refresh();
+  }
 
   return (
     <div className="space-y-4">
@@ -62,25 +98,81 @@ export default function CardStatements({
         <h3 className="text-sm font-semibold mb-2">Estados de cuenta importados</h3>
         <div className="flex flex-wrap gap-2">
           {batches.map((b) => (
-            <button
+            <div
               key={b.id}
-              onClick={() => setSelectedBatchId(b.id)}
-              className={`text-left px-3 py-2 rounded-md border text-sm ${
+              className={`px-3 py-2 rounded-md border text-sm ${
                 b.id === selected.id ? 'border-black bg-gray-100' : 'border-gray-200'
               }`}
             >
-              <div className="font-medium">{b.label}</div>
-               <div className="text-xs text-gray-500">
-                {b.pending} pendientes · {b.classified} clasificados
-                {b.ignored > 0 ? ` · ${b.ignored} ignorados` : ''}
-              </div>
-              <div className="text-xs font-medium text-gray-700 mt-0.5">
-                Total: ${b.totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-              </div>
-            </button>
+              {editingBatchId === b.id ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    className="border rounded px-1 py-0.5 text-sm"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => saveLabel(b.id)}
+                    disabled={savingLabel}
+                    className="text-xs text-brand-600 hover:underline"
+                  >
+                    {savingLabel ? '...' : 'Guardar'}
+                  </button>
+                  <button
+                    onClick={() => setEditingBatchId(null)}
+                    className="text-xs text-gray-500 hover:underline"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div onClick={() => selectBatch(b.id)} className="cursor-pointer text-left">
+                  <div className="font-medium flex items-center gap-1">
+                    {b.label}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(b);
+                      }}
+                      className="text-gray-400 hover:text-gray-700"
+                      title="Editar nombre"
+                    >
+                      ✎
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {b.pending} pendientes · {b.classified} clasificados
+                    {b.ignored > 0 ? ` · ${b.ignored} ignorados` : ''}
+                  </div>
+                  <div className="text-xs font-medium text-gray-700 mt-0.5">
+                    Total: ${b.totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
+
+      {userOptions.length > 1 && (
+        <div>
+          <label className="block text-xs text-gray-500 mb-0.5">Filtrar por persona</label>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+          >
+            <option value="">Todas</option>
+            {userOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <h4 className="text-sm font-semibold mb-2">Pendientes de clasificar — {selected.label}</h4>

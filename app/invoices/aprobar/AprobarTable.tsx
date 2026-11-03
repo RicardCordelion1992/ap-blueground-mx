@@ -10,19 +10,49 @@ type Row = {
   vendorName: string;
   categoryName: string | null;
   buildingLabel: string;
+  buildingNames: string[];
   total: number;
   receivedDate: string;
 };
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
-export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]; canApprove: boolean }) {
+export default function AprobarTable({
+  invoices,
+  canApprove,
+  buildingOptions,
+  categoryOptions,
+}: {
+  invoices: Row[];
+  canApprove: boolean;
+  buildingOptions: string[];
+  categoryOptions: string[];
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
-  const allIds = useMemo(() => invoices.map((r) => r.id), [invoices]);
+  const [vendorQuery, setVendorQuery] = useState('');
+  const [buildingFilter, setBuildingFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      if (vendorQuery.trim() && !inv.vendorName.toLowerCase().includes(vendorQuery.trim().toLowerCase())) {
+        return false;
+      }
+      if (buildingFilter && !inv.buildingNames.includes(buildingFilter)) {
+        return false;
+      }
+      if (categoryFilter && inv.categoryName !== categoryFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [invoices, vendorQuery, buildingFilter, categoryFilter]);
+
+  const allIds = useMemo(() => filteredInvoices.map((r) => r.id), [filteredInvoices]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -58,6 +88,41 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
 
   return (
     <div className="space-y-3">
+      <div className="card p-3 flex flex-wrap gap-3 items-end">
+        <div>
+          <label className="label">Buscar proveedor</label>
+          <input
+            type="text"
+            className="input"
+            placeholder="Nombre del proveedor…"
+            value={vendorQuery}
+            onChange={(e) => setVendorQuery(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Edificio</label>
+          <select className="input" value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
+            <option value="">Todos</option>
+            {buildingOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Categoría</label>
+          <select className="input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">Todas</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {canApprove && selected.size > 0 && (
         <div className="card p-4 flex flex-wrap items-center gap-3 bg-brand-50 border border-brand-200">
           <button onClick={approveSelected} disabled={saving} className="btn-primary disabled:opacity-40">
@@ -93,7 +158,7 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {filteredInvoices.map((inv) => (
               <tr key={inv.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-2">
                   {canApprove && (
@@ -114,10 +179,10 @@ export default function AprobarTable({ invoices, canApprove }: { invoices: Row[]
                 </td>
               </tr>
             ))}
-            {invoices.length === 0 && (
+            {filteredInvoices.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  No hay facturas pendientes de aprobación.
+                  No hay facturas que coincidan.
                 </td>
               </tr>
             )}

@@ -40,7 +40,7 @@ export default async function GastosTarjetaPage() {
         assignedUser: { select: { name: true } },
         building: { select: { name: true } },
         category: { select: { name: true } },
-        batch: { select: { id: true, fileName: true, createdAt: true } },
+        batch: { select: { id: true, fileName: true, label: true, createdAt: true } },
       },
       orderBy: { chargeDate: 'desc' },
       take: 3000,
@@ -66,7 +66,7 @@ export default async function GastosTarjetaPage() {
 
   const batchMap = new Map<
     string,
-    { id: string; fileName: string | null; createdAt: Date; charges: typeof cardChargesAll }
+    { id: string; fileName: string | null; label: string | null; createdAt: Date; charges: typeof cardChargesAll }
   >();
   for (const c of cardChargesAll) {
     if (!c.batch) continue;
@@ -74,6 +74,7 @@ export default async function GastosTarjetaPage() {
       batchMap.set(c.batch.id, {
         id: c.batch.id,
         fileName: c.batch.fileName,
+        label: c.batch.label,
         createdAt: c.batch.createdAt,
         charges: [],
       });
@@ -85,7 +86,7 @@ export default async function GastosTarjetaPage() {
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .map((b) => ({
       id: b.id,
-      label: batchLabel(b.fileName, b.createdAt),
+      label: b.label || batchLabel(b.fileName, b.createdAt),
       createdAt: b.createdAt.toISOString(),
       total: b.charges.length,
       totalAmount: b.charges.reduce((sum, c) => sum + Number(c.amount), 0),

@@ -167,6 +167,48 @@ export default function CardChargesTable({
     router.refresh();
   }
 
+  async function handleSaveSelectedIndividually() {
+    if (selectedIds.size === 0) return;
+    setBulkSaving(true);
+    setBulkMessage(null);
+    let ok = 0;
+    let missing = 0;
+    const errors: string[] = [];
+    for (const id of selectedIds) {
+      const sel = selections[id];
+      if (!sel?.buildingId || !sel?.categoryId) {
+        missing++;
+        continue;
+      }
+      try {
+        const res = await fetch(`/api/card-charges/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ buildingId: sel.buildingId, categoryId: sel.categoryId }),
+        });
+        if (res.ok) {
+          ok++;
+        } else {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const data = await res.json();
+            if (data?.error) detail += `: ${data.error}`;
+          } catch {}
+          errors.push(detail);
+        }
+      } catch (err: any) {
+        errors.push(err?.message || 'Error de red');
+      }
+    }
+    setBulkSaving(false);
+    setSelectedIds(new Set());
+    const parts = [`Se guardaron ${ok} cargos con su propia clasificación.`];
+    if (missing > 0) parts.push(`${missing} se omitieron (les falta edificio o categoría en su fila).`);
+    if (errors.length > 0) parts.push(`${errors.length} fallaron: ${Array.from(new Set(errors)).join(' | ')}`);
+    setBulkMessage(parts.join(' '));
+    router.refresh();
+  }
+
   if (charges.length === 0) {
     return <p className="text-sm text-gray-500">No hay cargos de tarjeta pendientes de clasificar.</p>;
   }
@@ -199,7 +241,7 @@ export default function CardChargesTable({
         {selectedIds.size > 0 && (
           <>
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">Edificio</label>
+              <label className="block text-xs text-gray-500 mb-0.5">Edificio (para todos)</label>
               <select
                 className="border rounded px-1 py-1 text-sm"
                 value={bulkBuildingId}
@@ -214,7 +256,7 @@ export default function CardChargesTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">Categoría</label>
+              <label className="block text-xs text-gray-500 mb-0.5">Categoría (para todos)</label>
               <select
                 className="border rounded px-1 py-1 text-sm"
                 value={bulkCategoryId}
@@ -234,7 +276,15 @@ export default function CardChargesTable({
               disabled={bulkSaving}
               className="px-3 py-1.5 bg-black text-white text-sm rounded disabled:opacity-50"
             >
-              {bulkSaving ? 'Clasificando...' : `Clasificar ${selectedIds.size} seleccionados`}
+              {bulkSaving ? 'Clasificando...' : `Clasificar ${selectedIds.size} (mismo edificio/categoría)`}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveSelectedIndividually}
+              disabled={bulkSaving}
+              className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded disabled:opacity-50"
+            >
+              {bulkSaving ? 'Guardando...' : `Guardar ${selectedIds.size} con su propia clasificación`}
             </button>
             <button
               type="button"

@@ -24,6 +24,7 @@ function batchLabel(fileName: string | null, createdAt: Date) {
 export default async function GastosTarjetaPage() {
   const user = await getCurrentUser();
   const canSeeAll = user?.role === 'ADMIN' || user?.role === 'FINANCE';
+  const isAdmin = user?.role === 'ADMIN';
 
   const [buildings, categories, receipts, cardChargesAll] = await Promise.all([
     prisma.building.findMany({ orderBy: { name: 'asc' } }),
@@ -125,6 +126,7 @@ export default async function GastosTarjetaPage() {
         buildings={buildingOptions}
         categories={categoryOptions}
         showCardHolder={canSeeAll}
+        isAdmin={isAdmin}
       />
       <UploadReceipt buildings={buildingOptions} categories={categoryOptions} />
       <ReceiptsTable receipts={rows} buildings={buildingOptions} categories={categoryOptions} showUploadedBy={canSeeAll} />

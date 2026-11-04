@@ -37,12 +37,14 @@ export default function CardStatements({
   buildings,
   categories,
   showCardHolder,
+  isAdmin,
 }: {
   batches: BatchSummary[];
   charges: ChargeRow[];
   buildings: Option[];
   categories: Option[];
   showCardHolder: boolean;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
@@ -52,6 +54,7 @@ export default function CardStatements({
   const [editValue, setEditValue] = useState('');
   const [savingLabel, setSavingLabel] = useState(false);
   const [userFilter, setUserFilter] = useState('');
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
 
   if (batches.length === 0) {
     return <p className="text-sm text-gray-500">Todavía no se ha importado ningún estado de cuenta.</p>;
@@ -89,6 +92,28 @@ export default function CardStatements({
     });
     setSavingLabel(false);
     setEditingBatchId(null);
+    router.refresh();
+  }
+
+  async function deleteBatch(b: BatchSummary) {
+    if (
+      !confirm(
+        `¿Eliminar el estado de cuenta "${b.label}"? Esto borra sus ${b.total} cargos (pendientes y clasificados). No se puede deshacer.`
+      )
+    ) {
+      return;
+    }
+    setDeletingBatchId(b.id);
+    const res = await fetch(`/api/card-charges/batches/${b.id}`, { method: 'DELETE' });
+    setDeletingBatchId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo eliminar');
+      return;
+    }
+    if (selectedBatchId === b.id) {
+      setSelectedBatchId(null);
+    }
     router.refresh();
   }
 
@@ -141,6 +166,19 @@ export default function CardStatements({
                     >
                       ✎
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteBatch(b);
+                        }}
+                        disabled={deletingBatchId === b.id}
+                        className="text-gray-400 hover:text-red-600 disabled:opacity-50"
+                        title="Eliminar estado de cuenta"
+                      >
+                        {deletingBatchId === b.id ? '…' : '🗑'}
+                      </button>
+                    )}
                   </div>
                   <div className="text-xs text-gray-500">
                     {b.pending} pendientes · {b.classified} clasificados

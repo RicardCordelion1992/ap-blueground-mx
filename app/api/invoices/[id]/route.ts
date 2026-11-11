@@ -49,7 +49,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
-  if (body.status === 'PENDING') {
+ if (body.status === 'PENDING') {
     const current = await prisma.invoice.findUnique({ where: { id: params.id } });
     if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
     if (current.status !== 'REJECTED') {

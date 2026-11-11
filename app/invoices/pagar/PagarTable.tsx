@@ -14,11 +14,15 @@ type Row = {
   total: number;
   dueDate: string | null;
   payable: boolean;
+  monthKey: string;
+  monthLabel: string;
 };
+
+type MonthOption = { key: string; label: string };
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
-function PaymentActionCell({ invoiceId }: { invoiceId: string }) {
+function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canMarkPaid: boolean }) {
   const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard'>('idle');
   const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +80,10 @@ function PaymentActionCell({ invoiceId }: { invoiceId: string }) {
     return <span className="text-xs text-green-700 font-medium">✓ Pagada con tarjeta</span>;
   }
 
+  if (!canMarkPaid) {
+    return <p className="text-xs text-gray-400">Solo un administrador puede marcar como pagada.</p>;
+  }
+
   return (
     <div className="space-y-1">
       {error && <p className="text-xs text-red-600">{error}</p>}
@@ -106,10 +114,14 @@ export default function PagarTable({
   invoices,
   buildingOptions,
   categoryOptions,
+  monthOptions,
+  canMarkPaid,
 }: {
   invoices: Row[];
   buildingOptions: string[];
   categoryOptions: string[];
+  monthOptions: MonthOption[];
+  canMarkPaid: boolean;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -121,6 +133,7 @@ export default function PagarTable({
   const [vendorQuery, setVendorQuery] = useState('');
   const [buildingFilter, setBuildingFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
@@ -133,9 +146,12 @@ export default function PagarTable({
       if (categoryFilter && inv.categoryName !== categoryFilter) {
         return false;
       }
+      if (monthFilter && inv.monthKey !== monthFilter) {
+        return false;
+      }
       return true;
     });
-  }, [invoices, vendorQuery, buildingFilter, categoryFilter]);
+  }, [invoices, vendorQuery, buildingFilter, categoryFilter, monthFilter]);
 
   const selectableRows = useMemo(() => filteredInvoices, [filteredInvoices]);
 
@@ -185,6 +201,17 @@ export default function PagarTable({
           />
         </div>
         <div>
+          <label className="label">Mes</label>
+          <select className="input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
+            <option value="">Todos</option>
+            {monthOptions.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="label">Edificio</label>
           <select className="input" value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
             <option value="">Todos</option>
@@ -208,7 +235,7 @@ export default function PagarTable({
         </div>
       </div>
 
-      {selected.size > 0 && (
+      {canMarkPaid && selected.size > 0 && (
         <div className="card p-4 flex flex-wrap items-end gap-3 bg-brand-50 border border-brand-200">
           <div>
             <label className="label">Fecha de pago</label>
@@ -239,12 +266,14 @@ export default function PagarTable({
           <thead className="text-left text-gray-500 border-b border-gray-100">
             <tr>
               <th className="px-4 py-2 font-medium">
-                <input
-                  type="checkbox"
-                  checked={selectableRows.length > 0 && selected.size === selectableRows.length}
-                  onChange={toggleAll}
-                  title="Seleccionar todas"
-                />
+                {canMarkPaid && (
+                  <input
+                    type="checkbox"
+                    checked={selectableRows.length > 0 && selected.size === selectableRows.length}
+                    onChange={toggleAll}
+                    title="Seleccionar todas"
+                  />
+                )}
               </th>
               <th className="px-4 py-2 font-medium">Proveedor</th>
               <th className="px-4 py-2 font-medium">Categoría</th>
@@ -259,11 +288,13 @@ export default function PagarTable({
             {filteredInvoices.map((inv) => (
               <tr key={inv.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(inv.id)}
-                    onChange={() => toggle(inv.id)}
-                  />
+                  {canMarkPaid && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(inv.id)}
+                      onChange={() => toggle(inv.id)}
+                    />
+                  )}
                 </td>
                 <td className="px-4 py-2">
                   <Link href={`/invoices/${inv.id}`} className="text-brand-600 hover:underline font-medium">
@@ -276,7 +307,7 @@ export default function PagarTable({
                 <td className="px-4 py-2">{fmt(inv.total)}</td>
                 <td className="px-4 py-2 text-gray-500">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-MX') : '—'}</td>
                 <td className="px-4 py-2">
-                  <PaymentActionCell invoiceId={inv.id} />
+                  <PaymentActionCell invoiceId={inv.id} canMarkPaid={canMarkPaid} />
                 </td>
               </tr>
             ))}

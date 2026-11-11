@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 type DocType = { id: string; name: string; required: boolean; expires: boolean };
 type VendorDoc = { id: string; docTypeId: string; status: string; fileUrl: string | null; fileName: string | null; expiresDate: string | null };
@@ -102,16 +103,34 @@ function toForm(v: Vendor): InfoForm {
   };
 }
 
+type InvoiceHistoryRow = {
+  id: string;
+  categoryName: string | null;
+  buildingLabel: string;
+  total: number;
+  receivedDate: string;
+  status: string;
+};
+
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'Por aprobar',
+  APPROVED: 'Aprobada',
+  PAID: 'Pagada',
+  REJECTED: 'Rechazada',
+};
+
 export default function VendorDetailClient({
   vendor: initial,
   buildings,
   categories,
   isAdmin,
+  invoices,
 }: {
   vendor: Vendor;
   buildings: { id: string; name: string }[];
   categories: Category[];
   isAdmin?: boolean;
+  invoices: InvoiceHistoryRow[];
 }) {
   const router = useRouter();
   const [vendor, setVendor] = useState(initial);
@@ -520,7 +539,7 @@ export default function VendorDetailClient({
         </table>
       </div>
 
-      <div className="card p-4">
+           <div className="card p-4">
         <h2 className="font-medium text-sm mb-3">Edificios a su cargo (landlord)</h2>
         <div className="grid grid-cols-3 gap-2">
           {buildings.map((b) => (
@@ -534,6 +553,55 @@ export default function VendorDetailClient({
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="font-medium text-sm">Historial de facturas</h2>
+          <p className="text-xs text-gray-500">
+            {invoices.length} factura{invoices.length === 1 ? '' : 's'} registrada{invoices.length === 1 ? '' : 's'} con este proveedor
+            {invoices.length > 0 && (
+              <> · ${invoices.reduce((s, i) => s + i.total, 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} total</>
+            )}
+          </p>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="text-left text-gray-500 border-b border-gray-100">
+            <tr>
+              <th className="px-4 py-2 font-medium">Categoría</th>
+              <th className="px-4 py-2 font-medium">Edificio(s)</th>
+              <th className="px-4 py-2 font-medium">Total</th>
+              <th className="px-4 py-2 font-medium">Recibida</th>
+              <th className="px-4 py-2 font-medium">Estatus</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map((inv) => (
+              <tr key={inv.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                <td className="px-4 py-2">
+                  <Link href={`/invoices/${inv.id}`} className="text-brand-600 hover:underline font-medium">
+                    {inv.categoryName || 'Sin categoría'}
+                  </Link>
+                </td>
+                <td className="px-4 py-2 text-gray-600">{inv.buildingLabel}</td>
+                <td className="px-4 py-2">${inv.total.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                <td className="px-4 py-2 text-gray-500">{new Date(inv.receivedDate).toLocaleDateString('es-MX')}</td>
+                <td className="px-4 py-2">
+                  <span className={inv.status === 'PAID' ? 'badge bg-gray-100 text-gray-700' : inv.status === 'REJECTED' ? 'badge bg-red-50 text-red-700' : inv.status === 'APPROVED' ? 'badge-ready' : 'badge bg-amber-50 text-amber-700'}>
+                    {INVOICE_STATUS_LABEL[inv.status] || inv.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {invoices.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                  Sin facturas registradas para este proveedor.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

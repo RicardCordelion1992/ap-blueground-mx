@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/currentUser';
 import { periodLabel } from '@/lib/periodLabel';
 import PagarTable from './PagarTable';
 
@@ -15,6 +16,9 @@ function monthLabel(d: Date) {
 }
 
 export default async function PaymentsPage() {
+  const user = await getCurrentUser();
+  const canMarkPaid = user?.role === 'ADMIN';
+
   const [invoices, buildings, categories] = await Promise.all([
     prisma.invoice.findMany({
       where: { status: 'APPROVED' },
@@ -57,7 +61,20 @@ export default async function PaymentsPage() {
         <p className="text-sm text-gray-500">Facturas aprobadas, en espera de pago</p>
       </div>
 
-      <PagarTable invoices={rows} buildingOptions={buildingOptions} categoryOptions={categoryOptions} monthOptions={monthOptions} />
+      {!canMarkPaid && (
+        <div className="card p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200">
+          Solo un administrador puede marcar facturas como pagadas. Puedes ver la lista, pero las acciones de pago
+          estarán deshabilitadas.
+        </div>
+      )}
+
+      <PagarTable
+        invoices={rows}
+        buildingOptions={buildingOptions}
+        categoryOptions={categoryOptions}
+        monthOptions={monthOptions}
+        canMarkPaid={canMarkPaid}
+      />
     </div>
   );
 }

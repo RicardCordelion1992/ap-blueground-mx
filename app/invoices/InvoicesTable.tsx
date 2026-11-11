@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type InvoiceRow = {
   id: string;
@@ -37,7 +38,41 @@ function StatusBadge({ status, payable }: { status: string; payable: boolean }) 
   return <span className="badge bg-amber-50 text-amber-700">Por aprobar</span>;
 }
 
-function InvoiceRowsTable({ rows }: { rows: InvoiceRow[] }) {
+function ReturnToApprovalButton({ invoiceId }: { invoiceId: string }) {
+  const router = useRouter();
+  const [working, setWorking] = useState(false);
+
+  async function handleClick() {
+    if (
+      !confirm(
+        '¿Regresar esta factura a "Por aprobar"? Perderá su estatus de pagada y volverá a pasar por el flujo de aprobación.'
+      )
+    ) {
+      return;
+    }
+    setWorking(true);
+    const res = await fetch(`/api/invoices/${invoiceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'PENDING' }),
+    });
+    setWorking(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'No se pudo regresar la factura.');
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <button onClick={handleClick} disabled={working} className="text-xs text-brand-600 hover:underline disabled:opacity-40">
+      {working ? 'Regresando…' : 'Regresar a por aprobar'}
+    </button>
+  );
+}
+
+function InvoiceRowsTable({ rows, isAdmin }: { rows: InvoiceRow[]; isAdmin: boolean }) {
   return (
     <div className="card overflow-hidden">
       <table className="w-full text-sm">
@@ -50,6 +85,7 @@ function InvoiceRowsTable({ rows }: { rows: InvoiceRow[] }) {
             <th className="px-4 py-2 font-medium">Total</th>
             <th className="px-4 py-2 font-medium">Recibida</th>
             <th className="px-4 py-2 font-medium">Estatus</th>
+            <th className="px-4 py-2 font-medium">Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -68,11 +104,14 @@ function InvoiceRowsTable({ rows }: { rows: InvoiceRow[] }) {
               <td className="px-4 py-2">
                 <StatusBadge status={inv.status} payable={inv.payable} />
               </td>
+              <td className="px-4 py-2">
+                {isAdmin && inv.status === 'PAID' && <ReturnToApprovalButton invoiceId={inv.id} />}
+              </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+              <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                 Sin facturas.
               </td>
             </tr>
@@ -86,9 +125,11 @@ function InvoiceRowsTable({ rows }: { rows: InvoiceRow[] }) {
 export default function InvoicesTable({
   rows,
   monthGroups,
+  isAdmin,
 }: {
   rows: InvoiceRow[];
   monthGroups: MonthGroup[];
+  isAdmin: boolean;
 }) {
   const [viewMode, setViewMode] = useState<'month' | 'all'>('month');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(
@@ -137,11 +178,11 @@ export default function InvoicesTable({
                 </button>
               ))}
             </div>
-            <InvoiceRowsTable rows={rows.filter((r) => r.monthKey === selectedMonthKey)} />
+            <InvoiceRowsTable rows={rows.filter((r) => r.monthKey === selectedMonthKey)} isAdmin={isAdmin} />
           </>
         )
       ) : (
-        <InvoiceRowsTable rows={rows} />
+        <InvoiceRowsTable rows={rows} isAdmin={isAdmin} />
       )}
     </div>
   );

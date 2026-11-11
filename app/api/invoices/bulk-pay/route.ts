@@ -31,10 +31,6 @@ export async function POST(req: NextRequest) {
       skipped.push({ id, reason: `Estado actual: ${inv.status}` });
       continue;
     }
-    if (!inv.payable) {
-      skipped.push({ id, reason: 'Proveedor no está "Ready"' });
-      continue;
-    }
     await prisma.invoice.update({ where: { id }, data: { status: 'PAID', paidDate, paidVia } });
     await logAudit(user.id, 'mark_paid', 'Invoice', id, `Pago masivo${paidVia ? ` · ${paidVia}` : ''}`);
     updated.push(id);

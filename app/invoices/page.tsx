@@ -24,12 +24,15 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
   const user = await getCurrentUser();
   const isAdmin = user?.role === 'ADMIN';
 
-  const invoices = await prisma.invoice.findMany({
-    where: { status: searchParams.status as any },
-    include: { vendor: true, category: true, allocations: { include: { building: true } } },
-    orderBy: { receivedDate: 'desc' },
-    take: 2000,
-  });
+  const [invoices, buildings] = await Promise.all([
+    prisma.invoice.findMany({
+      where: { status: searchParams.status as any },
+      include: { vendor: true, category: true, allocations: { include: { building: true } } },
+      orderBy: { receivedDate: 'desc' },
+      take: 2000,
+    }),
+    prisma.building.findMany({ orderBy: { name: 'asc' } }),
+  ]);
 
   const rows = invoices.map((inv) => {
     const d = new Date(inv.receivedDate);
@@ -42,6 +45,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
         inv.allocations.length > 1
           ? `${inv.allocations.length} edificios`
           : inv.allocations[0]?.building.name || '—',
+      buildingNames: inv.allocations.map((a) => a.building.name),
       total: Number(inv.total),
       receivedDate: inv.receivedDate.toISOString(),
       status: inv.status,
@@ -61,6 +65,8 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
     g.total += r.total;
   }
   const monthGroups = Array.from(groupMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+
+  const buildingOptions = buildings.map((b) => b.name);
 
   return (
     <div className="space-y-4">
@@ -82,7 +88,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
         <Link href="/invoices?status=REJECTED" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'REJECTED' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Rechazadas</Link>
       </div>
 
-      <InvoicesTable rows={rows} monthGroups={monthGroups} isAdmin={isAdmin} />
+      <InvoicesTable rows={rows} monthGroups={monthGroups} isAdmin={isAdmin} buildingOptions={buildingOptions} />
     </div>
   );
 }

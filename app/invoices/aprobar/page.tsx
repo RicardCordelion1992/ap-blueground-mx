@@ -4,6 +4,16 @@ import AprobarTable from './AprobarTable';
 
 export const dynamic = 'force-dynamic';
 
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function monthKey(d: Date) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+function monthLabel(d: Date) {
+  const mes = MESES[d.getUTCMonth()];
+  return `${mes.charAt(0).toUpperCase()}${mes.slice(1)} ${d.getUTCFullYear()}`;
+}
+
 export default async function ApprovalsPage() {
   const user = await getCurrentUser();
   const canApprove = user?.role === 'ADMIN';
@@ -13,7 +23,7 @@ export default async function ApprovalsPage() {
       where: { status: 'PENDING' },
       include: { vendor: true, category: true, allocations: { include: { building: true } } },
       orderBy: { receivedDate: 'asc' },
-      take: 100,
+      take: 2000,
     }),
     prisma.building.findMany({ orderBy: { name: 'asc' } }),
     prisma.expenseCategory.findMany({ orderBy: { sortOrder: 'asc' } }),
@@ -28,10 +38,18 @@ export default async function ApprovalsPage() {
     buildingNames: inv.allocations.map((a) => a.building.name),
     total: Number(inv.total),
     receivedDate: inv.receivedDate.toISOString(),
+    monthKey: monthKey(inv.receivedDate),
+    monthLabel: monthLabel(inv.receivedDate),
   }));
 
   const buildingOptions = buildings.map((b) => b.name);
   const categoryOptions = categories.map((c) => c.name);
+
+  const monthMap = new Map<string, string>();
+  for (const r of rows) monthMap.set(r.monthKey, r.monthLabel);
+  const monthOptions = Array.from(monthMap.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([key, label]) => ({ key, label }));
 
   return (
     <div className="space-y-4">
@@ -47,7 +65,13 @@ export default async function ApprovalsPage() {
         </div>
       )}
 
-      <AprobarTable invoices={rows} canApprove={canApprove} buildingOptions={buildingOptions} categoryOptions={categoryOptions} />
+      <AprobarTable
+        invoices={rows}
+        canApprove={canApprove}
+        buildingOptions={buildingOptions}
+        categoryOptions={categoryOptions}
+        monthOptions={monthOptions}
+      />
     </div>
   );
 }

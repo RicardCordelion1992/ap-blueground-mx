@@ -18,7 +18,7 @@ type Row = {
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
-function PaymentActionCell({ invoiceId, payable }: { invoiceId: string; payable: boolean }) {
+function PaymentActionCell({ invoiceId }: { invoiceId: string }) {
   const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard'>('idle');
   const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,19 +86,18 @@ function PaymentActionCell({ invoiceId, payable }: { invoiceId: string; payable:
             type="file"
             className="hidden"
             accept="application/pdf,image/*"
-            disabled={!payable || state === 'working'}
+            disabled={state === 'working'}
             onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
           />
         </label>
         <button
           onClick={markPaidCard}
-          disabled={!payable || state === 'working'}
+          disabled={state === 'working'}
           className="btn-secondary text-xs disabled:opacity-40"
         >
           Marcar pagada con tarjeta
         </button>
       </div>
-      {!payable && <p className="text-xs text-amber-700">Proveedor no "Ready".</p>}
     </div>
   );
 }
@@ -138,7 +137,7 @@ export default function PagarTable({
     });
   }, [invoices, vendorQuery, buildingFilter, categoryFilter]);
 
-  const selectableRows = useMemo(() => filteredInvoices.filter((inv) => inv.payable), [filteredInvoices]);
+  const selectableRows = useMemo(() => filteredInvoices, [filteredInvoices]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -244,7 +243,7 @@ export default function PagarTable({
                   type="checkbox"
                   checked={selectableRows.length > 0 && selected.size === selectableRows.length}
                   onChange={toggleAll}
-                  title="Seleccionar todas las que se pueden pagar"
+                  title="Seleccionar todas"
                 />
               </th>
               <th className="px-4 py-2 font-medium">Proveedor</th>
@@ -262,7 +261,6 @@ export default function PagarTable({
                 <td className="px-4 py-2">
                   <input
                     type="checkbox"
-                    disabled={!inv.payable}
                     checked={selected.has(inv.id)}
                     onChange={() => toggle(inv.id)}
                   />
@@ -278,7 +276,7 @@ export default function PagarTable({
                 <td className="px-4 py-2">{fmt(inv.total)}</td>
                 <td className="px-4 py-2 text-gray-500">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-MX') : '—'}</td>
                 <td className="px-4 py-2">
-                  <PaymentActionCell invoiceId={inv.id} payable={inv.payable} />
+                  <PaymentActionCell invoiceId={inv.id} />
                 </td>
               </tr>
             ))}

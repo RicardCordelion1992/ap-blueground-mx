@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
+import { getCurrentUser } from '@/lib/currentUser';
 import { periodLabel } from '@/lib/periodLabel';
 import InvoicesTable from './InvoicesTable';
 
@@ -20,6 +21,9 @@ function monthLabel(d: Date) {
 }
 
 export default async function InvoicesPage({ searchParams }: { searchParams: { status?: string } }) {
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === 'ADMIN';
+
   const invoices = await prisma.invoice.findMany({
     where: { status: searchParams.status as any },
     include: { vendor: true, category: true, allocations: { include: { building: true } } },
@@ -78,7 +82,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: { s
         <Link href="/invoices?status=REJECTED" className={`px-3 py-1.5 rounded-md ${searchParams.status === 'REJECTED' ? 'bg-brand-50 text-brand-700' : 'text-gray-600'}`}>Rechazadas</Link>
       </div>
 
-      <InvoicesTable rows={rows} monthGroups={monthGroups} />
+      <InvoicesTable rows={rows} monthGroups={monthGroups} isAdmin={isAdmin} />
     </div>
   );
 }

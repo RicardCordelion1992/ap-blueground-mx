@@ -9,6 +9,9 @@ import { logAudit } from '@/lib/audit';
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Solo un administrador puede marcar facturas como pagadas.' }, { status: 403 });
+  }
 
   const body = await req.json();
   const invoiceIds: string[] = Array.isArray(body.invoiceIds) ? body.invoiceIds : [];

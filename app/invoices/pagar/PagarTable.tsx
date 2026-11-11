@@ -23,7 +23,7 @@ type MonthOption = { key: string; label: string };
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
 function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canMarkPaid: boolean }) {
-  const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard'>('idle');
+  const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard' | 'rejected'>('idle');
   const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +60,27 @@ function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canM
     setState('paidCard');
   }
 
+  async function rejectInvoice() {
+    if (!confirm('¿Rechazar esta factura? Dejará de aparecer en "Por pagar" y pasará a "Rechazadas" en Facturas (se puede reenviar a revisión después si fue un error, por ejemplo si estaba duplicada).')) {
+      return;
+    }
+    const reason = window.prompt('Motivo (opcional, ej. "factura duplicada"):') || '';
+    setState('working');
+    setError(null);
+    const res = await fetch(`/api/invoices/${invoiceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'REJECTED', rejectedReason: reason || null }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error || 'No se pudo rechazar');
+      setState('idle');
+      return;
+    }
+    setState('rejected');
+  }
+
   if (state === 'paidProof') {
     return (
       <div className="text-xs">
@@ -78,6 +99,10 @@ function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canM
 
   if (state === 'paidCard') {
     return <span className="text-xs text-green-700 font-medium">✓ Pagada con tarjeta</span>;
+  }
+
+  if (state === 'rejected') {
+    return <span className="text-xs text-red-700 font-medium">✗ Rechazada</span>;
   }
 
   if (!canMarkPaid) {
@@ -104,6 +129,13 @@ function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canM
           className="btn-secondary text-xs disabled:opacity-40"
         >
           Marcar pagada con tarjeta
+        </button>
+        <button
+          onClick={rejectInvoice}
+          disabled={state === 'working'}
+          className="text-xs text-red-600 hover:underline disabled:opacity-40"
+        >
+          Rechazar / devolver a revisión
         </button>
       </div>
     </div>

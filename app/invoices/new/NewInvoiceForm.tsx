@@ -429,6 +429,31 @@ export default function NewInvoiceForm({
 
           <div className="grid grid-cols-3 gap-4">
             <div>
+              <label className="label">Total de la factura *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                className="input"
+                value={total}
+                onChange={(e) => setTotal(e.target.value)}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Se precarga con lo extraído automáticamente — edítalo si no coincide con la factura real.
+              </p>
+            </div>
+            <div>
+              <label className="label">Subtotal</label>
+              <input type="number" step="0.01" className="input" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">IVA</label>
+              <input type="number" step="0.01" className="input" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
               <label className="label">No. de factura</label>
               <input className="input" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
             </div>

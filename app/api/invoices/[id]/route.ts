@@ -29,7 +29,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: 'Solo se pueden aprobar o rechazar facturas que están por aprobar.' }, { status: 400 });
     }
 
+  if (body.status === 'APPROVED' || body.status === 'REJECTED') {
+    if (user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Solo un administrador puede aprobar o rechazar facturas.' }, { status: 403 });
+    }
+
+    const current = await prisma.invoice.findUnique({ where: { id: params.id } });
+    if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+
     if (body.status === 'APPROVED') {
+      if (current.status !== 'PENDING') {
+        return NextResponse.json({ error: 'Solo se pueden aprobar facturas que están por aprobar.' }, { status: 400 });
+      }
       const invoice = await prisma.invoice.update({
         where: { id: params.id },
         data: { status: 'APPROVED', approvedById: user.id, approvedAt: new Date(), rejectedReason: null },
@@ -38,6 +49,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json(invoice);
     }
 
+    if (current.status !== 'PENDING' && current.status !== 'APPROVED') {
+      return NextResponse.json({ error: 'Solo se pueden rechazar facturas por aprobar o ya aprobadas.' }, { status: 400 });
+    }
     const invoice = await prisma.invoice.update({
       where: { id: params.id },
       data: { status: 'REJECTED', rejectedReason: body.rejectedReason || null },

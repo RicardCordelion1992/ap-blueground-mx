@@ -38,5 +38,30 @@ export default async function VendorDetailPage({ params }: { params: { id: strin
     documents: documentsWithSignedUrls,
   };
 
-  return <VendorDetailClient vendor={enriched as any} buildings={buildings} categories={categories} isAdmin={me?.role === 'ADMIN'} />;
+  const invoiceHistory = await prisma.invoice.findMany({
+    where: { vendorId: vendor.id },
+    include: { category: true, allocations: { include: { building: true } } },
+    orderBy: { receivedDate: 'desc' },
+    take: 500,
+  });
+
+  const invoices = invoiceHistory.map((inv) => ({
+    id: inv.id,
+    categoryName: inv.category?.name || null,
+    buildingLabel:
+      inv.allocations.length > 1 ? `${inv.allocations.length} edificios` : inv.allocations[0]?.building.name || '—',
+    total: Number(inv.total),
+    receivedDate: inv.receivedDate.toISOString(),
+    status: inv.status,
+  }));
+
+  return (
+    <VendorDetailClient
+      vendor={enriched as any}
+      buildings={buildings}
+      categories={categories}
+      isAdmin={me?.role === 'ADMIN'}
+      invoices={invoices}
+    />
+  );
 }

@@ -11,6 +11,9 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Solo un administrador puede marcar facturas como pagadas.' }, { status: 403 });
+  }
 
   const invoice = await prisma.invoice.findUnique({ where: { id: params.id } });
   if (!invoice) return NextResponse.json({ error: 'No encontrada' }, { status: 404 });

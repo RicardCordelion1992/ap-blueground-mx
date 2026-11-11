@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -10,6 +10,7 @@ type InvoiceRow = {
   categoryName: string | null;
   period: string;
   buildingLabel: string;
+  buildingNames: string[];
   total: number;
   receivedDate: string;
   status: string;
@@ -126,18 +127,58 @@ export default function InvoicesTable({
   rows,
   monthGroups,
   isAdmin,
+  buildingOptions,
 }: {
   rows: InvoiceRow[];
   monthGroups: MonthGroup[];
   isAdmin: boolean;
+  buildingOptions: string[];
 }) {
   const [viewMode, setViewMode] = useState<'month' | 'all'>('month');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(
     monthGroups.length > 0 ? monthGroups[0].key : null
   );
+  const [vendorQuery, setVendorQuery] = useState('');
+  const [buildingFilter, setBuildingFilter] = useState('');
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (vendorQuery.trim() && !r.vendorName.toLowerCase().includes(vendorQuery.trim().toLowerCase())) {
+        return false;
+      }
+      if (buildingFilter && !r.buildingNames.includes(buildingFilter)) {
+        return false;
+      }
+      return true;
+    });
+  }, [rows, vendorQuery, buildingFilter]);
 
   return (
     <div className="space-y-3">
+      <div className="card p-3 flex flex-wrap gap-3 items-end">
+        <div>
+          <label className="label">Buscar proveedor</label>
+          <input
+            type="text"
+            className="input"
+            placeholder="Nombre del proveedor…"
+            value={vendorQuery}
+            onChange={(e) => setVendorQuery(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Edificio</label>
+          <select className="input" value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)}>
+            <option value="">Todos</option>
+            {buildingOptions.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="flex gap-2 text-sm">
         <button
           onClick={() => setViewMode('month')}
@@ -178,11 +219,11 @@ export default function InvoicesTable({
                 </button>
               ))}
             </div>
-            <InvoiceRowsTable rows={rows.filter((r) => r.monthKey === selectedMonthKey)} isAdmin={isAdmin} />
+            <InvoiceRowsTable rows={filteredRows.filter((r) => r.monthKey === selectedMonthKey)} isAdmin={isAdmin} />
           </>
         )
       ) : (
-        <InvoiceRowsTable rows={rows} isAdmin={isAdmin} />
+        <InvoiceRowsTable rows={filteredRows} isAdmin={isAdmin} />
       )}
     </div>
   );

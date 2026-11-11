@@ -22,7 +22,15 @@ type MonthOption = { key: string; label: string };
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
 
-function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canMarkPaid: boolean }) {
+function PaymentActionCell({
+  invoiceId,
+  canMarkPaid,
+  canUploadProof,
+}: {
+  invoiceId: string;
+  canMarkPaid: boolean;
+  canUploadProof: boolean;
+}) {
   const [state, setState] = useState<'idle' | 'working' | 'paidProof' | 'paidCard' | 'rejected'>('idle');
   const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +113,7 @@ function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canM
     return <span className="text-xs text-red-700 font-medium">✗ Rechazada</span>;
   }
 
-  if (!canMarkPaid) {
+  if (!canMarkPaid && !canUploadProof) {
     return <p className="text-xs text-gray-400">Solo un administrador puede marcar como pagada.</p>;
   }
 
@@ -113,30 +121,36 @@ function PaymentActionCell({ invoiceId, canMarkPaid }: { invoiceId: string; canM
     <div className="space-y-1">
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex flex-col gap-1">
-        <label className="btn-secondary text-xs cursor-pointer text-center">
-          {state === 'working' ? 'Subiendo…' : 'Subir comprobante'}
-          <input
-            type="file"
-            className="hidden"
-            accept="application/pdf,image/*"
+        {canUploadProof && (
+          <label className="btn-secondary text-xs cursor-pointer text-center">
+            {state === 'working' ? 'Subiendo…' : 'Subir comprobante'}
+            <input
+              type="file"
+              className="hidden"
+              accept="application/pdf,image/*"
+              disabled={state === 'working'}
+              onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
+            />
+          </label>
+        )}
+        {canMarkPaid && (
+          <button
+            onClick={markPaidCard}
             disabled={state === 'working'}
-            onChange={(e) => e.target.files?.[0] && uploadProof(e.target.files[0])}
-          />
-        </label>
-        <button
-          onClick={markPaidCard}
-          disabled={state === 'working'}
-          className="btn-secondary text-xs disabled:opacity-40"
-        >
-          Marcar pagada con tarjeta
-        </button>
-        <button
-          onClick={rejectInvoice}
-          disabled={state === 'working'}
-          className="text-xs text-red-600 hover:underline disabled:opacity-40"
-        >
-          Rechazar / devolver a revisión
-        </button>
+            className="btn-secondary text-xs disabled:opacity-40"
+          >
+            Marcar pagada con tarjeta
+          </button>
+        )}
+        {canMarkPaid && (
+          <button
+            onClick={rejectInvoice}
+            disabled={state === 'working'}
+            className="text-xs text-red-600 hover:underline disabled:opacity-40"
+          >
+            Rechazar / devolver a revisión
+          </button>
+        )}
       </div>
     </div>
   );
@@ -148,12 +162,14 @@ export default function PagarTable({
   categoryOptions,
   monthOptions,
   canMarkPaid,
+  canUploadProof,
 }: {
   invoices: Row[];
   buildingOptions: string[];
   categoryOptions: string[];
   monthOptions: MonthOption[];
   canMarkPaid: boolean;
+  canUploadProof: boolean;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -339,7 +355,7 @@ export default function PagarTable({
                 <td className="px-4 py-2">{fmt(inv.total)}</td>
                 <td className="px-4 py-2 text-gray-500">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-MX') : '—'}</td>
                 <td className="px-4 py-2">
-                  <PaymentActionCell invoiceId={inv.id} canMarkPaid={canMarkPaid} />
+                  <PaymentActionCell invoiceId={inv.id} canMarkPaid={canMarkPaid} canUploadProof={canUploadProof} />
                 </td>
               </tr>
             ))}

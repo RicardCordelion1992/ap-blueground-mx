@@ -49,15 +49,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(invoice);
   }
 
- if (body.status === 'PENDING') {
+   if (body.status === 'PENDING') {
     const current = await prisma.invoice.findUnique({ where: { id: params.id } });
     if (!current) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
-    if (current.status !== 'REJECTED') {
-      return NextResponse.json({ error: 'Solo se pueden reenviar facturas rechazadas.' }, { status: 400 });
+    if (current.status !== 'REJECTED' && current.status !== 'PAID') {
+      return NextResponse.json({ error: 'Solo se pueden reenviar a revisión facturas rechazadas o ya pagadas.' }, { status: 400 });
+    }
+    if (current.status === 'PAID' && user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Solo un administrador puede regresar una factura pagada a "Por aprobar".' }, { status: 403 });
     }
     const invoice = await prisma.invoice.update({
       where: { id: params.id },
-      data: { status: 'PENDING', rejectedReason: null },
+      data: { status: 'PENDING', rejectedReason: null, paidDate: null, paidVia: null, approvedById: null, approvedAt: null },
     });
     await logAudit(user.id, 'resubmit', 'Invoice', invoice.id);
     return NextResponse.json(invoice);

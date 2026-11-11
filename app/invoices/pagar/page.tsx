@@ -18,6 +18,7 @@ function monthLabel(d: Date) {
 export default async function PaymentsPage() {
   const user = await getCurrentUser();
   const canMarkPaid = user?.role === 'ADMIN';
+  const canUploadProof = user?.role === 'ADMIN' || user?.role === 'FINANCE';
 
   const [invoices, buildings, categories] = await Promise.all([
     prisma.invoice.findMany({
@@ -63,8 +64,9 @@ export default async function PaymentsPage() {
 
       {!canMarkPaid && (
         <div className="card p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200">
-          Solo un administrador puede marcar facturas como pagadas. Puedes ver la lista, pero las acciones de pago
-          estarán deshabilitadas.
+          {canUploadProof
+            ? 'Puedes subir el comprobante de pago de cada factura. Marcarlas como pagadas manualmente (con tarjeta o en lote) solo lo puede hacer un administrador.'
+            : 'Solo un administrador puede marcar facturas como pagadas. Puedes ver la lista, pero las acciones de pago estarán deshabilitadas.'}
         </div>
       )}
 
@@ -74,6 +76,7 @@ export default async function PaymentsPage() {
         categoryOptions={categoryOptions}
         monthOptions={monthOptions}
         canMarkPaid={canMarkPaid}
+        canUploadProof={canUploadProof}
       />
     </div>
   );

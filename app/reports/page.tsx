@@ -2,12 +2,35 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ReportsPage({ searchParams }: { searchParams: { from?: string; to?: string } }) {
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: { from?: string; to?: string; basis?: string };
+}) {
   const from = searchParams.from ? new Date(searchParams.from) : undefined;
   const to = searchParams.to ? new Date(searchParams.to) : undefined;
+  // basis = qué fecha de la factura se usa para decidir si cae en el rango Desde/Hasta:
+  // "period" (default) = el periodo facturado (billingStart/billingEnd) se traslapa con el rango,
+  //   es decir "el gasto que corresponde a este mes" — lo que normalmente se quiere para un
+  //   reporte mensual / P&L. "received" = la fecha en que la factura se capturó en el sistema,
+  //   útil para medir volumen operativo del mes, sin importar de qué periodo sea el gasto.
+  const basis = searchParams.basis === 'received' ? 'received' : 'period';
+
+  const allocationWhere =
+    basis === 'received'
+      ? { invoice: { receivedDate: { gte: from, lte: to } } }
+      : {
+          invoice: {
+            // Traslape de [billingStart, billingEnd] con [from, to]. Una factura sin periodo
+            // capturado (billingStart/billingEnd nulos) no puede evaluarse por periodo y se
+            // excluye de este criterio (aparece solo bajo "Fecha de recepción").
+            billingStart: { not: null, lte: to },
+            billingEnd: { not: null, gte: from },
+          },
+        };
 
   const allocations = await prisma.invoiceAllocation.findMany({
-    where: { invoice: { receivedDate: { gte: from, lte: to } } },
+    where: allocationWhere,
     include: { building: true, unit: true },
   });
 
@@ -69,9 +92,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: { fr
   const invoicesExportParams = new URLSearchParams();
   if (searchParams.from) invoicesExportParams.set('from', searchParams.from);
   if (searchParams.to) invoicesExportParams.set('to', searchParams.to);
+  if (basis === 'received') invoicesExportParams.set('basis', 'received');
   const invoicesExportQs = invoicesExportParams.toString();
   const invoicesExportHref = `/api/exports/invoices${invoicesExportQs ? `?${invoicesExportQs}` : ''}`;
   const hasDateFilter = Boolean(searchParams.from || searchParams.to);
+  const basisLabel = basis === 'received' ? 'fecha de recepción' : 'periodo facturado';
 
   return (
     <div className="space-y-8">
@@ -88,6 +113,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: { fr
         <div>
           <label className="label">Hasta</label>
           <input type="date" name="to" defaultValue={searchParams.to} className="input" />
+        </div>
+        <div>
+          <label className="label">Criterio</label>
+          <select name="basis" defaultValue={basis} className="input">
+            <option value="period">Periodo facturado (gasto del mes)</option>
+            <option value="received">Fecha de recepción (capturado en el mes)</option>
+          </select>
         </div>
         <button className="btn-secondary">Filtrar</button>
       </form>
@@ -108,7 +140,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { fr
       </div>
 
       <div className="card p-4">
-        <p className="text-sm text-gray-500">Total asignado</p>
+        <p className="text-sm text-gray-500">Total asignado ({basisLabel})</p>
         <p className="text-2xl font-semibold">{fmt(total)}</p>
       </div>
 

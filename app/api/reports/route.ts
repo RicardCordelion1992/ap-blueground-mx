@@ -4,19 +4,24 @@ import { prisma } from '@/lib/prisma';
 // Building- and unit-level breakdown of invoice allocations for a date range.
 // $ amounts are stored (InvoiceAllocation.amount); % is always computed live
 // here, never persisted, so it can't go stale as new invoices come in.
+//
+// basis=period (default): el periodo facturado (billingStart/billingEnd) se traslapa con
+// el rango — "el gasto que corresponde a este mes". basis=received: la fecha en que la
+// factura se capturó en el sistema, sin importar su periodo. Ver app/reports/page.tsx.
 export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get('from');
   const to = req.nextUrl.searchParams.get('to');
+  const basis = req.nextUrl.searchParams.get('basis') === 'received' ? 'received' : 'period';
+  const fromDate = from ? new Date(from) : undefined;
+  const toDate = to ? new Date(to) : undefined;
+
+  const invoiceWhere =
+    basis === 'received'
+      ? { receivedDate: { gte: fromDate, lte: toDate } }
+      : { billingStart: { not: null, lte: toDate }, billingEnd: { not: null, gte: fromDate } };
 
   const allocations = await prisma.invoiceAllocation.findMany({
-    where: {
-      invoice: {
-        receivedDate: {
-          gte: from ? new Date(from) : undefined,
-          lte: to ? new Date(to) : undefined,
-        },
-      },
-    },
+    where: { invoice: invoiceWhere },
     include: {
       building: true,
       unit: true,

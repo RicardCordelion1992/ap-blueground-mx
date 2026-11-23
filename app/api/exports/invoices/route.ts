@@ -7,17 +7,33 @@ export const dynamic = 'force-dynamic';
 // Descarga en CSV de las facturas, desglosadas una fila por asignación a edificio/unidad
 // (igual que la pantalla de Reportes) para que el total de una factura repartida entre
 // varios edificios se pueda analizar por edificio en Excel. Admite los mismos filtros que
-// la pantalla de Reportes (from/to por fecha recibida) y los que ya usa /api/invoices.
+// la pantalla de Reportes (from/to, por periodo facturado o por fecha recibida según
+// basis) y los que ya usa /api/invoices.
+//
+// Nota para quien sume "Total factura" en Excel: esta columna repite el total completo de
+// la factura en cada fila de asignación, así que una factura dividida entre dos edificios
+// aparece dos veces. Para sumar sin duplicar, sumar por "No. factura" único, o usar la
+// columna "Monto asignado a este edificio/unidad" (esa sí sin duplicar al nivel edificio).
 export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get('from');
   const to = req.nextUrl.searchParams.get('to');
+  const basis = req.nextUrl.searchParams.get('basis') === 'received' ? 'received' : 'period';
   const status = req.nextUrl.searchParams.get('status');
   const vendorId = req.nextUrl.searchParams.get('vendorId');
   const buildingId = req.nextUrl.searchParams.get('buildingId');
+  const fromDate = from ? new Date(from) : undefined;
+  const toDate = to ? new Date(to) : undefined;
+
+  const dateWhere =
+    !from && !to
+      ? {}
+      : basis === 'received'
+      ? { receivedDate: { gte: fromDate, lte: toDate } }
+      : { billingStart: { not: null, lte: toDate }, billingEnd: { not: null, gte: fromDate } };
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      receivedDate: from || to ? { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined } : undefined,
+      ...dateWhere,
       status: status ? (status as any) : undefined,
       vendorId: vendorId || undefined,
       allocations: buildingId ? { some: { buildingId } } : undefined,
